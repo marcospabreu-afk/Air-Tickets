@@ -113,8 +113,14 @@ Regras de alerta (`ALERTA` é impresso se qualquer uma valer para o menor preço
 encontrado):
 
 1. preço < `preco_alvo`;
-2. preço mais de 15% abaixo da média histórica da rota (média calculada
-   **antes** de gravar os preços da execução atual).
+2. preço mais de 15% abaixo da média histórica da rota. A referência é a
+   **média do menor preço de cada consulta anterior** (calculada antes de gravar a
+   execução atual), e não a média de todas as ofertas: esta inclui executiva e
+   itinerários longos e faria o menor preço parecer "barato" sempre.
+
+`passagens historico` mostra o menor, o maior e a média de **todos** os preços
+gravados por rota. Ofertas repetidas pela fonte (mesmo voo, horário e preço) são
+descartadas antes de ordenar e gravar.
 
 ## Agendar o monitoramento diário
 

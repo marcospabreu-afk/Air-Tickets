@@ -30,6 +30,17 @@ def ordenar(ofertas: list[Oferta]) -> list[Oferta]:
     return sorted(ofertas, key=lambda o: (o.preco, o.data_ida, o.data_volta, o.duracao_min))
 
 
+def remover_duplicadas(ofertas: list[Oferta]) -> list[Oferta]:
+    """A fonte às vezes repete o mesmo voo (mesmo horário, companhia e preço)."""
+    vistas, unicas = set(), []
+    for o in ofertas:
+        chave = (o.companhia, o.data_ida, o.data_volta, o.partida_ida, o.chegada_ida, o.escalas, o.preco)
+        if chave not in vistas:
+            vistas.add(chave)
+            unicas.append(o)
+    return unicas
+
+
 @dataclass
 class ResultadoBusca:
     ofertas: list[Oferta] = field(default_factory=list)
@@ -59,5 +70,5 @@ def buscar_flexivel(
             resultado.pares_consultados.append((data_ida, data_volta))
         except ErroDeProvedor as exc:
             resultado.erros.append(f"{data_ida} → {data_volta}: {exc}")
-    resultado.ofertas = ordenar(resultado.ofertas)
+    resultado.ofertas = ordenar(remover_duplicadas(resultado.ofertas))
     return resultado

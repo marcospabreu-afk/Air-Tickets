@@ -60,3 +60,18 @@ como *fallback* futuro de baixo custo); Kiwi (fechada); Amadeus Self‑Service
 - `alertas.py`: regra pura (abaixo do alvo **ou** > 15% abaixo da média histórica).
 - A chave nunca está no código: `.env` está no `.gitignore` e a CLI falha com
   mensagem clara se a variável não existir.
+
+## 3. Regra de alerta — referência da média (19/11/2026)
+
+O primeiro teste com dados reais (CWB→LIS) mostrou que comparar o menor preço do
+dia com a média de **todas** as ofertas gravadas (R$ 4.532 a R$ 24.087, média
+~R$ 6.146) disparava "26% abaixo da média" sem nenhuma queda real. A regra passou a
+usar a **média do menor preço de cada consulta** (`Historico.media_dos_menores`),
+que mede de fato se o preço mais barato disponível caiu.
+
+## 4. Validação com a fonte real (19/11/2026)
+
+`passagens buscar --origem CWB --destino LIS --ida 2027-03-10 --volta 2027-03-24 --flex 3`
+fez 49 consultas à SerpApi (1 + 48; a primeira já estava em cache), retornou 594
+ofertas únicas e levou ~4 min 20 s. Menor preço: R$ 4.532 (LATAM, 08/03 → 22/03).
+Isso consome ~20% da cota gratuita mensal — use `--flex` menor no dia a dia.

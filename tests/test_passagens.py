@@ -4,7 +4,7 @@ import pytest
 
 from passagens import cli
 from passagens.alertas import motivos_de_alerta
-from passagens.busca import buscar_flexivel, ordenar, pares_de_datas
+from passagens.busca import buscar_flexivel, ordenar, pares_de_datas, remover_duplicadas
 from passagens.historico import CacheSQLite, Historico
 from passagens.modelos import Oferta
 from passagens.provedores import ErroDeProvedor, ProvedorDePrecos, ProvedorFalso, ProvedorSerpApi
@@ -110,6 +110,10 @@ def test_busca_flexivel_retorna_ordenado():
     assert len(r.ofertas) == 49 * 3
 
 
+def test_remove_ofertas_duplicadas():
+    assert len(remover_duplicadas([oferta(3000), oferta(3000), oferta(3100)])) == 2
+
+
 # ------------------------------------------------------------- datas flexíveis
 
 
@@ -168,7 +172,17 @@ def test_resumo_menor_maior_media_por_rota():
     assert (r.menor, r.maior, r.media, r.registros) == (4000, 6000, 5000, 3)
     assert resumos[("GRU", "MAD")].media == 3000
     assert h.media("CWB", "LIS") == 5000
+    assert h.media_dos_menores("CWB", "LIS") == 4000  # uma consulta, menor = 4000
     assert h.media("AAA", "BBB") is None
+
+
+def test_media_dos_menores_usa_o_menor_de_cada_consulta():
+    h = Historico(":memory:")
+    h.gravar([oferta(4000), oferta(20000)], quando=datetime(2026, 11, 1, 8))
+    h.gravar([oferta(5000), oferta(30000)], quando=datetime(2026, 11, 2, 8))
+    assert h.media_dos_menores("CWB", "LIS") == 4500
+    # 4200 está abaixo da média geral (14750) mas NÃO 15% abaixo da média dos menores
+    assert not motivos_de_alerta(4200, None, h.media_dos_menores("CWB", "LIS"))
 
 
 def test_historico_persiste_em_arquivo(tmp_path):

@@ -101,8 +101,23 @@ class Historico:
         return [ResumoRota(*linha) for linha in self.conexao.execute(sql, args)]
 
     def media(self, origem: str, destino: str) -> float | None:
+        """Média de todos os preços gravados da rota (inclui classes caras)."""
         (valor,) = self.conexao.execute(
             "SELECT AVG(preco) FROM precos WHERE origem = ? AND destino = ?", (origem, destino)
+        ).fetchone()
+        return valor
+
+    def media_dos_menores(self, origem: str, destino: str) -> float | None:
+        """Média do MENOR preço de cada consulta da rota.
+
+        É a referência usada no alerta: comparar o menor preço de hoje com a média
+        de todas as ofertas (que inclui voos muito mais caros) daria alerta quase sempre.
+        Cada execução de `gravar` usa um único carimbo de data e hora = uma consulta.
+        """
+        (valor,) = self.conexao.execute(
+            "SELECT AVG(menor) FROM (SELECT MIN(preco) AS menor FROM precos"
+            " WHERE origem = ? AND destino = ? GROUP BY consultado_em)",
+            (origem, destino),
         ).fetchone()
         return valor
 

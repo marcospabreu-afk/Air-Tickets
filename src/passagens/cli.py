@@ -160,8 +160,9 @@ def cmd_monitorar(args: argparse.Namespace) -> int:
     alertas = 0
     for r in rotas:
         rotulo = f"{r['origem']}→{r['destino']} ({r['ida']} a {r['volta']}, ±{r['flex']})"
-        # A média é calculada ANTES de gravar os preços novos, para comparar com o passado.
-        media = historico.media(r["origem"], r["destino"])
+        # Referência: média do menor preço de cada consulta anterior, calculada ANTES
+        # de gravar os preços novos, para comparar hoje com o passado.
+        media = historico.media_dos_menores(r["origem"], r["destino"])
         resultado = buscar_flexivel(provedor, r["origem"], r["destino"], r["ida"], r["volta"], r["flex"])
         historico.gravar(resultado.ofertas)
         for erro in resultado.erros:
@@ -174,7 +175,7 @@ def cmd_monitorar(args: argparse.Namespace) -> int:
         alvo = formatar_brl(r["preco_alvo"]) if r["preco_alvo"] else "—"
         media_txt = formatar_brl(media) if media else "sem histórico"
         detalhe = (f"{formatar_brl(melhor.preco)} {melhor.companhia} "
-                   f"{melhor.data_ida:%d/%m}→{melhor.data_volta:%d/%m} | alvo {alvo} | média {media_txt}")
+                   f"{melhor.data_ida:%d/%m}→{melhor.data_volta:%d/%m} | alvo {alvo} | média dos menores {media_txt}")
         if motivos:
             alertas += 1
             print(f"ALERTA {rotulo}: {detalhe} | " + "; ".join(motivos))
