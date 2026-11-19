@@ -1,0 +1,17 @@
+# Rotas monitoradas por `passagens monitorar`.
+# flex: dias de folga para mais/menos (cada combinação de datas gasta 1 consulta da API:
+#       flex 0 = 1 consulta, flex 1 = 9, flex 3 = 49).
+# preco_alvo: alerta quando o menor preço total (ida e volta, BRL) ficar abaixo deste valor.
+rotas:
+  - origem: CWB
+    destino: LIS
+    ida: 2027-03-10
+    volta: 2027-03-24
+    flex: 1
+    preco_alvo: 4500
+  - origem: GRU
+    destino: MAD
+    ida: 2027-05-02
+    volta: 2027-05-16
+    flex: 0
+    preco_alvo: 3000
