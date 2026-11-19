@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
@@ -57,18 +58,29 @@ def buscar_flexivel(
     flex: int = 0,
     max_consultas: int | None = None,
     hoje: date | None = None,
+    paralelo: int = 1,
 ) -> ResultadoBusca:
+    """Consulta cada combinação de datas (até `paralelo` ao mesmo tempo)."""
     resultado = ResultadoBusca()
     pares = pares_de_datas(ida, volta, flex, hoje)
     # Se houver teto, começa pelas datas mais próximas das pedidas.
     pares.sort(key=lambda p: (abs((p[0] - ida).days) + abs((p[1] - volta).days), p))
     if max_consultas is not None:
         pares = pares[:max_consultas]
-    for data_ida, data_volta in pares:
+
+    def consultar(par: tuple[date, date]):
         try:
-            resultado.ofertas.extend(provedor.buscar(origem, destino, data_ida, data_volta))
-            resultado.pares_consultados.append((data_ida, data_volta))
+            return par, provedor.buscar(origem, destino, *par), None
         except ErroDeProvedor as exc:
-            resultado.erros.append(f"{data_ida} → {data_volta}: {exc}")
+            return par, None, exc
+
+    with ThreadPoolExecutor(max_workers=max(1, paralelo)) as executor:
+        respostas = list(executor.map(consultar, pares))
+    for (data_ida, data_volta), ofertas, erro in respostas:
+        if erro is not None:
+            resultado.erros.append(f"{data_ida} → {data_volta}: {erro}")
+        else:
+            resultado.ofertas.extend(ofertas)
+            resultado.pares_consultados.append((data_ida, data_volta))
     resultado.ofertas = ordenar(remover_duplicadas(resultado.ofertas))
     return resultado

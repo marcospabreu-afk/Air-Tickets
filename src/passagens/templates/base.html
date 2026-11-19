@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titulo %}Passagens{% endblock %}</title>
+<style>
+  :root {
+    --fundo: #f6f7f9; --cartao: #ffffff; --texto: #1c2430; --suave: #5b6676;
+    --borda: #dde2e8; --destaque: #1f5fbf; --destaque-texto: #ffffff;
+    --alerta-fundo: #fff4e5; --alerta-borda: #f0a33a; --alerta-texto: #7a4300;
+    --ok-fundo: #eaf6ee; --ok-texto: #1e6b3a; --erro-fundo: #fdecec; --erro-texto: #9b1c1c;
+    --linha-par: #f9fafb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --fundo: #12161c; --cartao: #1b2129; --texto: #e6eaf0; --suave: #9aa5b4;
+      --borda: #2c3540; --destaque: #6aa3ff; --destaque-texto: #0b1220;
+      --alerta-fundo: #3a2a12; --alerta-borda: #c98a2e; --alerta-texto: #ffd59a;
+      --ok-fundo: #15301f; --ok-texto: #8fd8a8; --erro-fundo: #3b1717; --erro-texto: #ffb3b3;
+      --linha-par: #1f262f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--fundo); color: var(--texto);
+         font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { background: var(--cartao); border-bottom: 1px solid var(--borda); }
+  .barra { max-width: 1200px; margin: 0 auto; padding: 12px 16px; display: flex;
+           align-items: center; gap: 24px; flex-wrap: wrap; }
+  .marca { font-weight: 700; font-size: 18px; }
+  nav a { color: var(--suave); text-decoration: none; margin-right: 16px; }
+  nav a.ativo { color: var(--destaque); font-weight: 600; }
+  main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 16px; }
+  .cartao { background: var(--cartao); border: 1px solid var(--borda); border-radius: 10px;
+            padding: 16px; margin-bottom: 16px; }
+  .aviso { border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; }
+  .aviso.erro { background: var(--erro-fundo); color: var(--erro-texto); }
+  .aviso.info { background: var(--alerta-fundo); color: var(--alerta-texto); }
+  .formulario { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;
+                align-items: end; }
+  label { display: block; font-size: 13px; color: var(--suave); margin-bottom: 4px; }
+  input, select { width: 100%; padding: 9px 10px; border: 1px solid var(--borda); border-radius: 8px;
+                  background: var(--fundo); color: var(--texto); font: inherit; }
+  input[name=origem], input[name=destino] { text-transform: uppercase; }
+  button { padding: 10px 18px; border: 0; border-radius: 8px; background: var(--destaque);
+           color: var(--destaque-texto); font: inherit; font-weight: 600; cursor: pointer; }
+  button[disabled] { opacity: .6; cursor: wait; }
+  .dica { font-size: 13px; color: var(--suave); margin: 10px 0 0; }
+  .resumo { color: var(--suave); margin: 0 0 10px; }
+  .tabela { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--borda); text-align: left; white-space: nowrap; }
+  th { color: var(--suave); font-weight: 600; font-size: 13px; }
+  tbody tr:nth-child(even) { background: var(--linha-par); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  td a { color: var(--destaque); }
+  .selo { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .selo.alerta { background: var(--alerta-fundo); color: var(--alerta-texto); border: 1px solid var(--alerta-borda); }
+  .selo.ok { background: var(--ok-fundo); color: var(--ok-texto); }
+  .mais-barato td { font-weight: 600; }
+</style>
+</head>
+<body>
+<header>
+  <div class="barra">
+    <span class="marca">✈ Passagens</span>
+    <nav>
+      <a href="/" class="{{ 'ativo' if pagina == 'busca' }}">Buscar</a>
+      <a href="/historico" class="{{ 'ativo' if pagina == 'historico' }}">Histórico</a>
+      <a href="/monitorar" class="{{ 'ativo' if pagina == 'monitorar' }}">Monitorar</a>
+    </nav>
+  </div>
+</header>
+<main>
+  {% if erro_provedor %}<div class="aviso erro">{{ erro_provedor }}</div>{% endif %}
+  {% if provedor and not provedor.dados_reais %}
+    <div class="aviso info">Provedor falso ativo: os preços são fictícios, apenas para demonstração.</div>
+  {% endif %}
+  {% block conteudo %}{% endblock %}
+</main>
+<script>
+  document.querySelectorAll("form[data-carregando]").forEach(function (f) {
+    f.addEventListener("submit", function () {
+      var b = f.querySelector("button");
+      b.disabled = true; b.textContent = f.dataset.carregando;
+    });
+  });
+</script>
+</body>
+</html>

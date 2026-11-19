@@ -15,6 +15,43 @@ preços de passagens aéreas** de ida e volta, em BRL.
 A escolha da fonte de dados (e por que não Amadeus, Duffel ou Travelpayouts)
 está em [DECISOES.md](DECISOES.md).
 
+## Interface web
+
+Além da linha de comando, há um site com as mesmas funções: **Buscar**,
+**Histórico** e **Monitorar**.
+
+```bash
+pip install -e '.[web]'
+export SERPAPI_API_KEY="sua_chave"
+export PASSAGENS_SENHA="uma_senha"     # opcional, mas recomendado se o site for público
+flask --app 'passagens.web:criar_app()' run
+# abra http://127.0.0.1:5000  (usuário: qualquer; senha: a de PASSAGENS_SENHA)
+```
+
+As consultas de datas flexíveis são feitas em paralelo (6 por vez): ±1 dia leva
+~10 s e ±3 dias ~1 min.
+
+### Publicar na internet (Render, plano gratuito)
+
+1. Crie uma conta em <https://render.com> (dá para entrar com o GitHub; o plano
+   gratuito não pede cartão para serviços web grátis — confira na hora).
+2. No painel: **New → Blueprint**, escolha o repositório `Air-Tickets`. O arquivo
+   `render.yaml` já configura tudo.
+3. Quando ele pedir, preencha **`SERPAPI_API_KEY`** (sua chave) e
+   **`PASSAGENS_SENHA`** (senha para abrir o site — sem ela, qualquer pessoa com o
+   link pode gastar sua cota da SerpApi).
+4. Ao final o Render mostra o endereço, algo como `https://passagens-xxxx.onrender.com`.
+
+Limitações do plano gratuito do Render:
+- o site "dorme" após 15 min sem acesso; o primeiro acesso depois disso leva ~1 min;
+- o disco é apagado quando o serviço reinicia ou dorme, então **o histórico de preços
+  se perde** (para guardar o histórico seria preciso um banco externo ou plano pago);
+- o monitoramento automático diário continua sendo feito pela linha de comando
+  (cron/Agendador), não pelo site.
+
+O endereço `marcospabreu-afk.github.io/Air-Tickets` (GitHub Pages) mostra apenas
+este README: o GitHub Pages não roda Python, então não serve para o site.
+
 ## Instalação
 
 Requer Python 3.10+.

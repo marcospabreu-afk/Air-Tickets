@@ -6,13 +6,12 @@ import argparse
 import os
 import sys
 from datetime import date
-from pathlib import Path
 from typing import Sequence
 
-import yaml
 
-from .alertas import formatar_brl, motivos_de_alerta
+from .alertas import formatar_brl
 from .busca import buscar_flexivel, pares_de_datas
+from .monitor import carregar_rotas, verificar_rota
 from .historico import CacheSQLite, Historico
 from .modelos import Oferta
 from .provedores import ErroDeProvedor, ProvedorDePrecos, ProvedorFalso, ProvedorSerpApi
@@ -93,7 +92,7 @@ def cmd_buscar(args: argparse.Namespace) -> int:
           f"volta {args.volta} ± {args.flex} dia(s) | {total} combinação(ões) de datas "
           f"via '{provedor.nome}'")
     resultado = buscar_flexivel(provedor, args.origem, args.destino, args.ida, args.volta,
-                                args.flex, args.max_consultas)
+                                args.flex, args.max_consultas, paralelo=args.paralelo)
     gravados = historico.gravar(resultado.ofertas)
     historico.fechar()
     for erro in resultado.erros:
@@ -132,56 +131,30 @@ def cmd_historico(args: argparse.Namespace) -> int:
     return 0
 
 
-def carregar_rotas(caminho: str | Path) -> list[dict]:
-    with open(caminho, encoding="utf-8") as arquivo:
-        dados = yaml.safe_load(arquivo) or {}
-    rotas = dados.get("rotas") or []
-    validadas = []
-    for i, r in enumerate(rotas, 1):
-        faltando = {"origem", "destino", "ida", "volta"} - set(r)
-        if faltando:
-            raise ValueError(f"rota #{i} em {caminho}: faltam campos {sorted(faltando)}")
-        validadas.append({
-            "origem": _iata(r["origem"]),
-            "destino": _iata(r["destino"]),
-            "ida": _data(r["ida"]),
-            "volta": _data(r["volta"]),
-            "flex": int(r.get("flex", 0)),
-            "preco_alvo": float(r["preco_alvo"]) if r.get("preco_alvo") is not None else None,
-        })
-    return validadas
-
-
 def cmd_monitorar(args: argparse.Namespace) -> int:
     rotas = carregar_rotas(args.rotas)
     historico = Historico(args.db)
     provedor = _criar_provedor(args, historico)
     _aviso_dados(provedor)
     alertas = 0
-    for r in rotas:
-        rotulo = f"{r['origem']}→{r['destino']} ({r['ida']} a {r['volta']}, ±{r['flex']})"
-        # Referência: média do menor preço de cada consulta anterior, calculada ANTES
-        # de gravar os preços novos, para comparar hoje com o passado.
-        media = historico.media_dos_menores(r["origem"], r["destino"])
-        resultado = buscar_flexivel(provedor, r["origem"], r["destino"], r["ida"], r["volta"], r["flex"])
-        historico.gravar(resultado.ofertas)
-        for erro in resultado.erros:
+    for rota in rotas:
+        r = verificar_rota(rota, historico, provedor, paralelo=args.paralelo)
+        for erro in r.erros:
             print(f"  aviso: {erro}", file=sys.stderr)
-        if not resultado.ofertas:
-            print(f"SEM DADOS {rotulo}: nenhuma oferta encontrada")
+        if r.melhor is None:
+            print(f"SEM DADOS {rota.rotulo}: nenhuma oferta encontrada")
             continue
-        melhor = resultado.ofertas[0]
-        motivos = motivos_de_alerta(melhor.preco, r["preco_alvo"], media)
-        alvo = formatar_brl(r["preco_alvo"]) if r["preco_alvo"] else "—"
-        media_txt = formatar_brl(media) if media else "sem histórico"
-        detalhe = (f"{formatar_brl(melhor.preco)} {melhor.companhia} "
-                   f"{melhor.data_ida:%d/%m}→{melhor.data_volta:%d/%m} | alvo {alvo} | média dos menores {media_txt}")
-        if motivos:
+        m = r.melhor
+        alvo = formatar_brl(rota.preco_alvo) if rota.preco_alvo else "—"
+        media_txt = formatar_brl(r.media_dos_menores) if r.media_dos_menores else "sem histórico"
+        detalhe = (f"{formatar_brl(m.preco)} {m.companhia} {m.data_ida:%d/%m}→{m.data_volta:%d/%m}"
+                   f" | alvo {alvo} | média dos menores {media_txt}")
+        if r.alerta:
             alertas += 1
-            print(f"ALERTA {rotulo}: {detalhe} | " + "; ".join(motivos))
-            print(f"       {melhor.link}")
+            print(f"ALERTA {rota.rotulo}: {detalhe} | " + "; ".join(r.motivos))
+            print(f"       {m.link}")
         else:
-            print(f"ok     {rotulo}: {detalhe}")
+            print(f"ok     {rota.rotulo}: {detalhe}")
     historico.fechar()
     print(f"\n{len(rotas)} rota(s) verificada(s), {alertas} alerta(s).")
     return 0
@@ -197,6 +170,8 @@ def criar_parser() -> argparse.ArgumentParser:
                        default=os.environ.get("PASSAGENS_PROVEDOR", "serpapi"),
                        help="fonte de preços (padrão: serpapi; 'falso' usa dados fixos)")
     comum.add_argument("--sem-cache", action="store_true", help="ignora o cache de 6 h da API")
+    comum.add_argument("--paralelo", type=int, default=4,
+                       help="consultas simultâneas à fonte (padrão: 4)")
 
     parser = argparse.ArgumentParser(prog="passagens", description=__doc__)
     sub = parser.add_subparsers(dest="comando", required=True)
