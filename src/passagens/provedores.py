@@ -7,6 +7,7 @@ import os
 import threading
 import zlib
 from abc import ABC, abstractmethod
+from dataclasses import replace
 from datetime import date, datetime
 from typing import Any, Callable
 
@@ -28,6 +29,13 @@ class ProvedorDePrecos(ABC):
     @abstractmethod
     def buscar(self, origem: str, destino: str, ida: date, volta: date) -> list[Oferta]:
         """Retorna as ofertas encontradas para exatamente essas datas."""
+
+    def detalhar_volta(self, oferta: Oferta) -> Oferta:
+        """Completa os horários do voo de volta da oferta (pode custar 1 consulta).
+
+        Fontes que já trazem a volta na busca principal não precisam sobrescrever.
+        """
+        return oferta
 
 
 # --------------------------------------------------------------------------- #
@@ -82,11 +90,17 @@ class ProvedorFalso(ProvedorDePrecos):
                 preco=round(total * fator_cia * self.fator, 2),
                 link=link,
                 provedor=self.nome,
-                partida_volta="10:20",
-                chegada_volta="05:40+1",
+                token_volta=f"falso:{cia}",
             )
             for cia, partida, chegada, escalas, duracao, fator_cia in _COMPANHIAS_FALSAS
         ]
+
+    def detalhar_volta(self, oferta: Oferta) -> Oferta:
+        if not oferta.token_volta:
+            return oferta
+        self.consultas_volta = getattr(self, "consultas_volta", 0) + 1
+        return replace(oferta, partida_volta="10:20", chegada_volta="05:40+1",
+                       escalas_volta=1, duracao_volta_min=900)
 
 
 # --------------------------------------------------------------------------- #
@@ -126,7 +140,6 @@ class ProvedorSerpApi(ProvedorDePrecos):
         self,
         chave: str | None = None,
         cache: Any | None = None,
-        detalhar_volta: bool = False,
         http_get: Callable[..., Any] | None = None,
     ):
         self.chave = chave or os.environ.get(VARIAVEL_CHAVE_SERPAPI)
@@ -137,7 +150,6 @@ class ProvedorSerpApi(ProvedorDePrecos):
                 f"`export {VARIAVEL_CHAVE_SERPAPI}=...` (ou use --provedor falso)."
             )
         self.cache = cache
-        self.detalhar_volta = detalhar_volta
         if http_get is None:
             import requests
 
@@ -178,24 +190,24 @@ class ProvedorSerpApi(ProvedorDePrecos):
             self.cache.guardar(chave_cache, dados)
         return dados
 
-    def buscar(self, origem: str, destino: str, ida: date, volta: date) -> list[Oferta]:
-        params = {
+    @staticmethod
+    def _parametros(origem: str, destino: str, ida: date, volta: date) -> dict[str, Any]:
+        return {
             "type": 1,  # ida e volta
             "departure_id": origem,
             "arrival_id": destino,
             "outbound_date": ida.isoformat(),
             "return_date": volta.isoformat(),
         }
-        dados = self._consultar(params)
+
+    def buscar(self, origem: str, destino: str, ida: date, volta: date) -> list[Oferta]:
+        dados = self._consultar(self._parametros(origem, destino, ida, volta))
         link = dados.get("search_metadata", {}).get("google_flights_url", "")
         ofertas = []
         for item in dados.get("best_flights", []) + dados.get("other_flights", []):
             trechos = item.get("flights") or []
             if not trechos or "price" not in item:
                 continue
-            partida_volta = chegada_volta = None
-            if self.detalhar_volta and item.get("departure_token"):
-                partida_volta, chegada_volta = self._horarios_volta(params, item["departure_token"], volta)
             ofertas.append(
                 Oferta(
                     companhia=_companhias(trechos),
@@ -210,20 +222,34 @@ class ProvedorSerpApi(ProvedorDePrecos):
                     preco=float(item["price"]),
                     link=link,
                     provedor=self.nome,
-                    partida_volta=partida_volta,
-                    chegada_volta=chegada_volta,
+                    token_volta=item.get("departure_token"),
                 )
             )
         return ofertas
 
-    def _horarios_volta(self, params: dict[str, Any], token: str, volta: date) -> tuple[str | None, str | None]:
-        """Uma consulta extra por oferta: busca o voo de volta mais barato."""
-        dados = self._consultar({**params, "departure_token": token})
-        opcoes = dados.get("best_flights", []) + dados.get("other_flights", [])
-        if not opcoes or not opcoes[0].get("flights"):
-            return None, None
-        trechos = opcoes[0]["flights"]
-        return (
-            _hora(trechos[0]["departure_airport"]["time"], volta),
-            _hora(trechos[-1]["arrival_airport"]["time"], volta),
+    def detalhar_volta(self, oferta: Oferta) -> Oferta:
+        """Uma consulta extra (com cache): opções de volta para o voo de ida escolhido.
+
+        Usa a opção de volta com o mesmo preço total da oferta (é a combinação que
+        o Google Flights anuncia); se não houver, a mais barata, com o preço dela.
+        """
+        if not oferta.token_volta or oferta.tem_volta or oferta.volta_indisponivel:
+            return oferta
+        params = self._parametros(oferta.origem, oferta.destino, oferta.data_ida, oferta.data_volta)
+        dados = self._consultar({**params, "departure_token": oferta.token_volta})
+        opcoes = [o for o in dados.get("best_flights", []) + dados.get("other_flights", [])
+                  if o.get("flights") and "price" in o]
+        if not opcoes:
+            return replace(oferta, volta_indisponivel=True)
+        escolhida = next((o for o in opcoes if float(o["price"]) == oferta.preco),
+                         min(opcoes, key=lambda o: float(o["price"])))
+        trechos = escolhida["flights"]
+        return replace(
+            oferta,
+            partida_volta=_hora(trechos[0]["departure_airport"]["time"], oferta.data_volta),
+            chegada_volta=_hora(trechos[-1]["arrival_airport"]["time"], oferta.data_volta),
+            escalas_volta=len(escolhida.get("layovers") or []) or len(trechos) - 1,
+            duracao_volta_min=int(escolhida.get("total_duration", 0)),
+            preco=float(escolhida["price"]),
+            preco_anunciado=oferta.preco if float(escolhida["price"]) != oferta.preco else None,
         )

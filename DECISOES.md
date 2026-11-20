@@ -104,3 +104,16 @@ Isso consome ~20% da cota gratuita mensal — use `--flex` menor no dia a dia.
   ordem das sugestões, para que CWB venha antes de Bacacheri e LHR antes de LCY.
 - Não foi usada uma lista `<datalist>` com todos os aeroportos na página (pesaria
   ~500 KB em cada acesso e não permite ordenar por relevância).
+
+## 7. Horário da volta e filtros (20/11/2026)
+
+- A SerpApi só devolve a volta numa consulta extra por oferta (`departure_token`).
+  Buscar para todas as ofertas de um ±3 dias (~600) esgotaria a cota grátis, então:
+  automático para as N mais baratas (padrão 5) + botão "ver volta" por linha.
+- A volta escolhida é a opção com o **mesmo preço total** anunciado (é a combinação
+  que o Google Flights mostra). Teste real: às vezes ela não existe — a oferta de
+  R$ 5.109 só tinha volta a R$ 5.513, e outra de R$ 6.251 tinha a R$ 5.921. Nesses
+  casos o preço é atualizado e o anunciado fica visível; quando a fonte não traz
+  nenhuma volta, a linha mostra "não informado" (e não consulta de novo).
+- Filtros feitos no navegador, sobre todas as ofertas já carregadas: instantâneos e
+  sem custo de cota. O filtro de escalas usa a ida, que é conhecida para todas.

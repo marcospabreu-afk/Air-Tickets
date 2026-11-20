@@ -35,6 +35,18 @@ nomes de países em português e apelidos em português das cidades mais buscada
 (Londres, Nova York, Munique…). Se você digitar só a cidade e buscar, o site usa o
 aeroporto principal dela.
 
+Na página de resultados:
+
+- **Horário da volta**: buscado automaticamente para as 5 ofertas mais baratas
+  (opção "Horário da volta": nenhuma, 5, 10 ou 20 — cada uma custa 1 consulta extra);
+  nas demais, o botão **ver volta** busca só aquela linha. Quando a combinação real
+  com a volta custa diferente do preço anunciado na lista, o novo preço aparece com
+  "anunciado R$ …" embaixo; quando a fonte não informa a volta, aparece "não informado".
+- **Filtros** (instantâneos, sem gastar consulta): ordenar por preço, duração ou
+  horário; escalas na ida; preço máximo; duração máxima da ida; data de ida; data de
+  volta; período da partida (madrugada, manhã, tarde, noite) e companhias. No
+  celular o painel começa recolhido.
+
 As consultas de datas flexíveis são feitas em paralelo (6 por vez): ±1 dia leva
 ~10 s e ±3 dias ~1 min.
 
@@ -103,8 +115,8 @@ Cada combinação de datas é **uma busca** na SerpApi. `--flex 3` = 7 datas de 
   `--sem-cache` força nova consulta);
 - `--max-consultas N` limita o número de combinações (começa pelas mais próximas
   das datas pedidas);
-- `--detalhar-volta` busca também os horários do voo de volta, mas gasta 1 busca
-  extra por oferta — use com `--flex 0`.
+- `--detalhar-volta N` busca os horários do voo de volta das N ofertas mais baratas
+  (padrão 5), gastando 1 busca extra por oferta; `--detalhar-volta 0` desliga.
 
 ## Exemplos de uso
 
@@ -115,8 +127,8 @@ passagens buscar --origem CWB --destino LIS --ida 2027-03-10 --volta 2027-03-24 
 # Mostrar todas as ofertas, não só as 30 primeiras
 passagens buscar --origem GRU --destino MAD --ida 2027-05-02 --volta 2027-05-16 --limite 0
 
-# Datas exatas, com horários da volta
-passagens buscar --origem CWB --destino LIS --ida 2027-03-10 --volta 2027-03-24 --detalhar-volta
+# Horários da volta das 10 ofertas mais baratas (padrão: 5; 0 desliga)
+passagens buscar --origem CWB --destino LIS --ida 2027-03-10 --volta 2027-03-24 --detalhar-volta 10
 
 # Histórico (todas as rotas, ou filtrando)
 passagens historico

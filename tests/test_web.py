@@ -38,7 +38,7 @@ def test_busca_flexivel_mostra_tabela_ordenada_e_grava_historico(cliente):
     assert "27 ofertas em 9 combinações" in " ".join(html.split())
     assert "Abrir no Google Flights" in html
     precos = [float(p.replace(".", "").replace(",", "."))
-              for p in __import__("re").findall(r'class="num">R\$ ([\d.,]+)', html)]
+              for p in __import__("re").findall(r'class="num preco"[^>]*>R\$ ([\d.,]+)', html)]
     assert precos == sorted(precos) and len(precos) == 27
     hist = cliente.get("/historico").get_data(as_text=True)
     assert "CWB → LIS" in hist and "27" in hist
@@ -92,3 +92,34 @@ def test_api_de_sugestoes_de_aeroportos(cliente):
     dados = cliente.get("/api/aeroportos?q=lisboa").get_json()
     assert dados[0]["iata"] == "LIS" and dados[0]["pais"] == "Portugal"
     assert cliente.get("/api/aeroportos?q=").get_json() == []
+
+
+def test_busca_traz_horario_da_volta_das_mais_baratas_e_filtros(cliente):
+    html = cliente.post("/buscar", data={"origem": "CWB", "destino": "LIS", "ida": "2027-03-10",
+                                         "volta": "2027-03-24", "flex": "1", "voltas": "5"}).get_data(as_text=True)
+    assert html.count("10:20 → 05:40+1") == 5          # 5 mais baratas com horário da volta
+    assert html.count('class="ver-volta') == 22         # demais: botão "ver volta"
+    assert 'id="filtros"' in html and 'name="f-cia" value="Azul"' in html
+    assert 'value="2027-03-09"' in html                 # datas de ida disponíveis no filtro
+
+
+def test_api_volta_do_botao(cliente):
+    r = cliente.post("/api/volta", json={"token": "falso:LATAM", "companhia": "LATAM", "origem": "CWB",
+                                         "destino": "LIS", "ida": "2027-03-10", "volta": "2027-03-24",
+                                         "preco": 4000})
+    assert r.status_code == 200
+    assert r.get_json()["partida"] == "10:20" and r.get_json()["chegada"] == "05:40+1"
+    assert cliente.post("/api/volta", json={"token": "x"}).status_code == 400
+
+
+def test_facetas_dos_filtros():
+    from datetime import date
+    from passagens.modelos import Oferta
+    from passagens.web import facetas
+    o = lambda cia, preco, ida: Oferta(cia, "CWB", "LIS", ida, date(2027, 3, 24), "10:00", "20:00", 1, 600,
+                                       preco, "", "t")
+    f = facetas([o("Gol / KLM", 5000, date(2027, 3, 9)), o("LATAM", 4000, date(2027, 3, 10)),
+                 o("Gol", 4500, date(2027, 3, 10))])
+    assert f["preco_min"] == 4000 and f["preco_max"] == 5000
+    assert f["companhias"][0] == ("Gol", 2)
+    assert f["datas_ida"] == [date(2027, 3, 9), date(2027, 3, 10)]
