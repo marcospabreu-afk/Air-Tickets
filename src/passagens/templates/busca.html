@@ -23,6 +23,17 @@
           {{ 'Exatas · 1 consulta' if n == 0 else '±%d · %d consultas'|format(n, (2*n+1)**2) }}</option>
         {% endfor %}
       </select></div>
+    <fieldset class="passageiros">
+      <legend>Passageiros</legend>
+      <div class="passageiros-campos">
+        <label>Adultos <small>12+ anos</small>
+          <input type="number" name="adultos" min="1" max="9" value="{{ form.adultos }}" required></label>
+        <label>Crianças <small>2–11 anos</small>
+          <input type="number" name="criancas" min="0" max="8" value="{{ form.criancas }}"></label>
+        <label>Bebês <small>colo, até 2</small>
+          <input type="number" name="bebes" min="0" max="4" value="{{ form.bebes }}"></label>
+      </div>
+    </fieldset>
     <div><label for="voltas">Horário da volta</label>
       <select id="voltas" name="voltas">
         {% for n in voltas_opcoes %}
@@ -35,6 +46,9 @@
   <p class="dica">Cada combinação de datas gasta 1 consulta da SerpApi (plano grátis: 250/mês), e cada
      horário de volta mais 1. Nas demais ofertas, use o botão "ver volta". Buscas repetidas em até 6 h
      vêm do cache e não gastam cota.</p>
+  <p class="dica">Com mais de um passageiro, o preço mostrado é o <b>total do grupo</b>, calculado pela
+     própria companhia: o desconto de criança varia (há companhias que cobram tarifa cheia) e bebê de
+     colo costuma pagar cerca de 10% da tarifa adulta. Máximo de 9 passageiros e 1 bebê de colo por adulto.</p>
 </form>
 
 {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
@@ -92,12 +106,15 @@
 
   <div class="cartao">
     <p class="resumo">{{ resultado.ofertas|length }} ofertas em {{ resultado.pares_consultados|length }}
-      combinações de datas · preço total ida e volta, 1 adulto, em BRL
+      combinações de datas · preço total ida e volta para
+      <b>{{ passageiros.descricao if passageiros else '1 adulto' }}</b>, em BRL
       {% if consultas is not none %} · {{ consultas }} consulta(s) nova(s) à API{% endif %}
       {% if segundos is not none %} · {{ '%.0f'|format(segundos) }} s{% endif %}</p>
     <div class="tabela">
-    <table id="resultados" data-origem="{{ form.origem }}" data-destino="{{ form.destino }}">
-      <thead><tr><th>#</th><th>Preço total</th><th>Companhia</th><th>Ida</th><th>Horário ida</th>
+    {% set por_pessoa = passageiros and passageiros.total > 1 %}
+    <table id="resultados" data-origem="{{ form.origem }}" data-destino="{{ form.destino }}"
+           data-passageiros="{{ passageiros.codigo if passageiros else '1A' }}">
+      <thead><tr><th>#</th><th>Preço total</th>{% if por_pessoa %}<th>Por pessoa</th>{% endif %}<th>Companhia</th><th>Ida</th><th>Horário ida</th>
         <th>Volta</th><th>Horário volta</th><th>Escalas ida/volta</th><th>Duração ida</th><th>Reserva</th></tr></thead>
       <tbody>
       {% for o in resultado.ofertas %}
@@ -108,6 +125,7 @@
           <td class="pos">{{ loop.index }}</td>
           <td class="num preco" data-original="{{ o.preco|brl }}">{{ o.preco|brl }}{% if o.preco_anunciado %}<br><small class="anunciado">anunciado
             {{ o.preco_anunciado|brl }}</small>{% endif %}</td>
+          {% if por_pessoa %}<td class="num por-pessoa">{{ o.preco_por_pessoa|brl }}</td>{% endif %}
           <td>{{ o.companhia }}</td>
           <td>{{ o.data_ida.strftime('%d/%m/%Y') }}</td>
           <td>{{ o.partida_ida }} → {{ o.chegada_ida }}</td>
@@ -123,7 +141,7 @@
           <td><a href="{{ o.link }}" target="_blank" rel="noopener" title="Abrir no Google Flights">Reservar ↗</a></td>
         </tr>
       {% endfor %}
-      <tr id="sem-resultado" hidden><td colspan="10">Nenhuma oferta com esses filtros.</td></tr>
+      <tr id="sem-resultado" hidden><td colspan="11">Nenhuma oferta com esses filtros.</td></tr>
       </tbody>
     </table>
     </div>
@@ -268,7 +286,7 @@
     fetch("/api/volta", {
       method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ token: botao.dataset.token, companhia: botao.dataset.companhia,
-        origem: tabela.dataset.origem, destino: tabela.dataset.destino,
+        origem: tabela.dataset.origem, destino: tabela.dataset.destino, passageiros: tabela.dataset.passageiros,
         ida: linha.dataset.ida, volta: linha.dataset.volta, preco: +linha.dataset.preco })
     }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
       .then(function (res) {
@@ -288,6 +306,8 @@
           nota.textContent = "anunciado " + celulaPreco.dataset.original;
           celulaPreco.appendChild(document.createElement("br")); celulaPreco.appendChild(nota);
           linha.dataset.preco = j.preco;
+          var pp = linha.querySelector(".por-pessoa");
+          if (pp) pp.textContent = brl.format(j.preco / j.total_passageiros);
           aplicar();
         }
       })

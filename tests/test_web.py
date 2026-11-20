@@ -123,3 +123,28 @@ def test_facetas_dos_filtros():
     assert f["preco_min"] == 4000 and f["preco_max"] == 5000
     assert f["companhias"][0] == ("Gol", 2)
     assert f["datas_ida"] == [date(2027, 3, 9), date(2027, 3, 10)]
+
+
+def test_busca_para_familia_mostra_total_e_por_pessoa(cliente):
+    html = cliente.post("/buscar", data={"origem": "CWB", "destino": "LIS", "ida": "2027-03-10",
+                                         "volta": "2027-03-24", "flex": "0", "adultos": "2", "criancas": "1",
+                                         "bebes": "1"}).get_data(as_text=True)
+    texto = " ".join(html.split())
+    assert "para <b>2 adultos, 1 criança, 1 bebê de colo</b>" in texto
+    assert "<th>Por pessoa</th>" in html and 'data-passageiros="2A1C1B"' in html
+    hist = cliente.get("/historico").get_data(as_text=True)
+    assert "2 adultos, 1 criança, 1 bebê de colo" in hist
+
+
+def test_busca_recusa_grupo_invalido(cliente):
+    html = cliente.post("/buscar", data={"origem": "CWB", "destino": "LIS", "ida": "2027-03-10",
+                                         "volta": "2027-03-24", "flex": "0", "adultos": "1",
+                                         "bebes": "2"}).get_data(as_text=True)
+    assert "cada bebê de colo precisa de um adulto" in html
+
+
+def test_api_volta_recebe_grupo(cliente):
+    r = cliente.post("/api/volta", json={"token": "falso:LATAM", "origem": "CWB", "destino": "LIS",
+                                         "ida": "2027-03-10", "volta": "2027-03-24", "preco": 9000,
+                                         "passageiros": "2A1C"})
+    assert r.status_code == 200 and r.get_json()["total_passageiros"] == 3

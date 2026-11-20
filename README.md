@@ -130,6 +130,10 @@ passagens buscar --origem GRU --destino MAD --ida 2027-05-02 --volta 2027-05-16 
 # Horários da volta das 10 ofertas mais baratas (padrão: 5; 0 desliga)
 passagens buscar --origem CWB --destino LIS --ida 2027-03-10 --volta 2027-03-24 --detalhar-volta 10
 
+# Família: 2 adultos, 1 criança (2–11 anos) e 1 bebê de colo (até 2 anos)
+passagens buscar --origem CWB --destino LIS --ida 2027-03-10 --volta 2027-03-24 \
+  --adultos 2 --criancas 1 --bebes 1
+
 # Histórico (todas as rotas, ou filtrando)
 passagens historico
 passagens historico --origem CWB --destino LIS
@@ -153,6 +157,26 @@ Exemplo de saída (provedor falso):
 O preço é o **total ida e volta para 1 adulto**, em BRL. O link abre a busca no
 Google Flights, onde aparecem as opções de reserva (companhia/agências).
 
+### Mais de um passageiro (crianças e bebês)
+
+Informe `--adultos`, `--criancas` (2 a 11 anos) e `--bebes` (de colo, até 2 anos) na
+linha de comando, ou os campos **Passageiros** no site. O preço mostrado passa a ser o
+**total do grupo**, com uma coluna **Por pessoa** (total ÷ número de passageiros).
+
+Não há uma fórmula fixa para criança: o total é calculado pela própria companhia e
+devolvido pela fonte. Em testes reais (CWB→LIS, mar/2027):
+
+| Grupo | Mesmo voo | Em relação a 1 adulto |
+|---|---|---|
+| 2 adultos | R$ 9.290 | 2,0× |
+| 1 adulto + 1 criança (LATAM) | R$ 9.290 | 2,0× — criança pagou tarifa cheia |
+| 1 adulto + 1 criança (outra cia.) | R$ 11.315 | 1,78× — criança com ~22% de desconto |
+| 1 adulto + 1 bebê de colo | R$ 5.323 | ~1,1× — bebê paga ~9–15% |
+
+Regras: de 1 a 9 adultos, no máximo 9 passageiros e 1 bebê de colo por adulto.
+O histórico e o alerta de queda são calculados **separadamente para cada composição
+de grupo** (o total de uma família não é comparado com o de 1 adulto).
+
 ### rotas.yaml
 
 ```yaml
@@ -162,7 +186,11 @@ rotas:
     ida: 2027-03-10
     volta: 2027-03-24
     flex: 1            # 9 buscas por execução
-    preco_alvo: 4500   # BRL, total ida e volta
+    preco_alvo: 4500   # BRL, total ida e volta (do grupo todo)
+    # opcionais (padrão: 1 adulto)
+    adultos: 2
+    criancas: 1        # 2 a 11 anos
+    bebes: 0           # de colo, até 2 anos
 ```
 
 Regras de alerta (`ALERTA` é impresso se qualquer uma valer para o menor preço

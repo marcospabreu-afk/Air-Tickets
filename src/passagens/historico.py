@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
-from .modelos import Oferta
+from .modelos import UM_ADULTO, Oferta, Passageiros
 
 VARIAVEL_DB = "PASSAGENS_DB"
 
@@ -33,9 +33,9 @@ CREATE TABLE IF NOT EXISTS precos (
     companhia     TEXT NOT NULL,
     escalas       INTEGER NOT NULL,
     preco         REAL NOT NULL,
-    provedor      TEXT NOT NULL
+    provedor      TEXT NOT NULL,
+    passageiros   TEXT NOT NULL DEFAULT '1A'  -- '1A', '2A1C', '2A1C1B'; preço = total do grupo
 );
-CREATE INDEX IF NOT EXISTS idx_precos_rota ON precos (origem, destino);
 CREATE TABLE IF NOT EXISTS cache (
     chave      TEXT PRIMARY KEY,
     criado_em  TEXT NOT NULL,
@@ -54,6 +54,11 @@ class ResumoRota:
     registros: int
     primeira: str
     ultima: str
+    passageiros: str = "1A"
+
+    @property
+    def grupo(self) -> Passageiros:
+        return Passageiros.do_codigo(self.passageiros)
 
 
 class Historico:
@@ -65,6 +70,17 @@ class Historico:
         self.conexao = sqlite3.connect(str(caminho), check_same_thread=False)
         self.trava = threading.Lock()
         self.conexao.executescript(_ESQUEMA)
+        self._migrar()
+
+    def _migrar(self) -> None:
+        """Bancos criados antes do suporte a vários passageiros: tudo era 1 adulto."""
+        colunas = {linha[1] for linha in self.conexao.execute("PRAGMA table_info(precos)")}
+        with self.conexao:
+            if "passageiros" not in colunas:
+                self.conexao.execute("ALTER TABLE precos ADD COLUMN passageiros TEXT NOT NULL DEFAULT '1A'")
+            self.conexao.execute("DROP INDEX IF EXISTS idx_precos_rota")
+            self.conexao.execute(
+                "CREATE INDEX IF NOT EXISTS idx_precos_rota_grupo ON precos (origem, destino, passageiros)")
 
     def fechar(self) -> None:
         self.conexao.close()
@@ -73,26 +89,26 @@ class Historico:
         quando_txt = (quando or datetime.now()).isoformat(timespec="seconds")
         linhas = [
             (quando_txt, o.origem, o.destino, o.data_ida.isoformat(), o.data_volta.isoformat(),
-             o.companhia, o.escalas, o.preco, o.provedor)
+             o.companhia, o.escalas, o.preco, o.provedor, o.passageiros.codigo)
             for o in ofertas
         ]
         with self.trava, self.conexao:
             self.conexao.executemany(
                 "INSERT INTO precos (consultado_em, origem, destino, data_ida, data_volta,"
-                " companhia, escalas, preco, provedor) VALUES (?,?,?,?,?,?,?,?,?)",
+                " companhia, escalas, preco, provedor, passageiros) VALUES (?,?,?,?,?,?,?,?,?,?)",
                 linhas,
             )
         return len(linhas)
 
     def registros(self) -> list[tuple]:
         return self.conexao.execute(
-            "SELECT consultado_em, origem, destino, data_ida, data_volta, companhia, preco, provedor"
-            " FROM precos ORDER BY id"
+            "SELECT consultado_em, origem, destino, data_ida, data_volta, companhia, preco, provedor,"
+            " passageiros FROM precos ORDER BY id"
         ).fetchall()
 
     def resumo(self, origem: str | None = None, destino: str | None = None) -> list[ResumoRota]:
         sql = ("SELECT origem, destino, MIN(preco), MAX(preco), AVG(preco), COUNT(*),"
-               " MIN(consultado_em), MAX(consultado_em) FROM precos")
+               " MIN(consultado_em), MAX(consultado_em), passageiros FROM precos")
         filtros, args = [], []
         if origem:
             filtros.append("origem = ?"); args.append(origem)
@@ -100,17 +116,20 @@ class Historico:
             filtros.append("destino = ?"); args.append(destino)
         if filtros:
             sql += " WHERE " + " AND ".join(filtros)
-        sql += " GROUP BY origem, destino ORDER BY origem, destino"
+        # Cada composição de grupo é uma série separada: o preço é o total do grupo.
+        sql += " GROUP BY origem, destino, passageiros ORDER BY origem, destino, passageiros"
         return [ResumoRota(*linha) for linha in self.conexao.execute(sql, args)]
 
-    def media(self, origem: str, destino: str) -> float | None:
+    def media(self, origem: str, destino: str, passageiros: Passageiros = UM_ADULTO) -> float | None:
         """Média de todos os preços gravados da rota (inclui classes caras)."""
         (valor,) = self.conexao.execute(
-            "SELECT AVG(preco) FROM precos WHERE origem = ? AND destino = ?", (origem, destino)
+            "SELECT AVG(preco) FROM precos WHERE origem = ? AND destino = ? AND passageiros = ?",
+            (origem, destino, passageiros.codigo),
         ).fetchone()
         return valor
 
-    def media_dos_menores(self, origem: str, destino: str) -> float | None:
+    def media_dos_menores(self, origem: str, destino: str,
+                          passageiros: Passageiros = UM_ADULTO) -> float | None:
         """Média do MENOR preço de cada consulta da rota.
 
         É a referência usada no alerta: comparar o menor preço de hoje com a média
@@ -119,8 +138,8 @@ class Historico:
         """
         (valor,) = self.conexao.execute(
             "SELECT AVG(menor) FROM (SELECT MIN(preco) AS menor FROM precos"
-            " WHERE origem = ? AND destino = ? GROUP BY consultado_em)",
-            (origem, destino),
+            " WHERE origem = ? AND destino = ? AND passageiros = ? GROUP BY consultado_em)",
+            (origem, destino, passageiros.codigo),
         ).fetchone()
         return valor
 

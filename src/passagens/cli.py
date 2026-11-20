@@ -13,7 +13,7 @@ from .alertas import formatar_brl
 from .busca import buscar_flexivel, detalhar_voltas, pares_de_datas
 from .monitor import carregar_rotas, verificar_rota
 from .historico import CacheSQLite, Historico
-from .modelos import Oferta
+from .modelos import Oferta, Passageiros
 from .provedores import ErroDeProvedor, ProvedorDePrecos, ProvedorFalso, ProvedorSerpApi
 
 
@@ -58,7 +58,8 @@ def _aviso_dados(provedor: ProvedorDePrecos) -> None:
 
 
 def tabela(ofertas: Sequence[Oferta], limite: int | None = None) -> str:
-    cabecalho = ["#", "Preço total", "Companhia", "Ida", "Horário ida", "Volta",
+    por_pessoa = bool(ofertas) and ofertas[0].passageiros.total > 1
+    cabecalho = ["#", "Preço total"] + (["Por pessoa"] if por_pessoa else []) + ["Companhia", "Ida", "Horário ida", "Volta",
                  "Horário volta", "Escalas ida/volta", "Duração ida", "Link de reserva"]
     linhas = []
     for i, o in enumerate(ofertas[:limite] if limite else ofertas, 1):
@@ -66,14 +67,15 @@ def tabela(ofertas: Sequence[Oferta], limite: int | None = None) -> str:
                          else "não informado" if o.volta_indisponivel else "—")
         linhas.append([
             str(i), formatar_brl(o.preco) + (f" (anunc. {formatar_brl(o.preco_anunciado)})"
-                                             if o.preco_anunciado else ""), o.companhia,
+                                             if o.preco_anunciado else "")]
+            + ([formatar_brl(o.preco_por_pessoa)] if por_pessoa else []) + [o.companhia,
             o.data_ida.strftime("%d/%m/%Y"), f"{o.partida_ida}→{o.chegada_ida}",
             o.data_volta.strftime("%d/%m/%Y"), horario_volta,
             _escalas(o), _duracao(o.duracao_min), o.link,
         ])
     larguras = [max(len(c), *(len(l[j]) for l in linhas)) if linhas else len(c)
                 for j, c in enumerate(cabecalho)]
-    alinhar_direita = {0, 1}
+    alinhar_direita = {0, 1, 2} if por_pessoa else {0, 1}
 
     def fmt(celulas: list[str]) -> str:
         partes = [c.rjust(w) if j in alinhar_direita else c.ljust(w)
@@ -90,16 +92,18 @@ def tabela(ofertas: Sequence[Oferta], limite: int | None = None) -> str:
 
 
 def cmd_buscar(args: argparse.Namespace) -> int:
+    passageiros = Passageiros(args.adultos, args.criancas, args.bebes)
     historico = Historico(args.db)
     provedor = _criar_provedor(args, historico)
     _aviso_dados(provedor)
     pares = pares_de_datas(args.ida, args.volta, args.flex)
     total = min(len(pares), args.max_consultas) if args.max_consultas else len(pares)
     print(f"Buscando {args.origem} → {args.destino} | ida {args.ida} ± {args.flex} dia(s), "
-          f"volta {args.volta} ± {args.flex} dia(s) | {total} combinação(ões) de datas "
-          f"via '{provedor.nome}'")
+          f"volta {args.volta} ± {args.flex} dia(s) | {passageiros.descricao} | "
+          f"{total} combinação(ões) de datas via '{provedor.nome}'")
     resultado = buscar_flexivel(provedor, args.origem, args.destino, args.ida, args.volta,
-                                args.flex, args.max_consultas, paralelo=args.paralelo)
+                                args.flex, args.max_consultas, paralelo=args.paralelo,
+                                passageiros=passageiros)
     # Grava os preços da busca antes de detalhar a volta (que pode ajustar alguns preços).
     gravados = historico.gravar(resultado.ofertas)
     n_voltas = 0
@@ -115,7 +119,8 @@ def cmd_buscar(args: argparse.Namespace) -> int:
         print("Nenhuma oferta encontrada.")
         return 1
     print(f"{len(resultado.ofertas)} ofertas em {len(resultado.pares_consultados)} combinações; "
-          f"preços em BRL, ida e volta, 1 adulto. Ordenado do menor para o maior.\n")
+          f"preço total em BRL, ida e volta, para {passageiros.descricao}. "
+          f"Ordenado do menor para o maior.\n")
     print(tabela(resultado.ofertas, args.limite))
     if n_voltas:
         print(f"Horários da volta buscados para as {n_voltas} ofertas mais baratas "
@@ -136,8 +141,9 @@ def cmd_historico(args: argparse.Namespace) -> int:
     if not resumos:
         print("Histórico vazio. Rode `passagens buscar ...` primeiro.")
         return 1
-    cab = ["Rota", "Menor", "Maior", "Média", "Registros", "Primeira consulta", "Última consulta"]
-    linhas = [[f"{r.origem}→{r.destino}", formatar_brl(r.menor), formatar_brl(r.maior),
+    cab = ["Rota", "Passageiros", "Menor", "Maior", "Média", "Registros", "Primeira consulta",
+           "Última consulta"]
+    linhas = [[f"{r.origem}→{r.destino}", r.grupo.descricao, formatar_brl(r.menor), formatar_brl(r.maior),
                formatar_brl(r.media), str(r.registros), r.primeira.replace("T", " "),
                r.ultima.replace("T", " ")] for r in resumos]
     larg = [max(len(c), *(len(l[j]) for l in linhas)) for j, c in enumerate(cab)]
@@ -199,6 +205,9 @@ def criar_parser() -> argparse.ArgumentParser:
     b.add_argument("--ida", type=_data, required=True)
     b.add_argument("--volta", type=_data, required=True)
     b.add_argument("--flex", type=int, default=0, help="testa ida e volta ± N dias")
+    b.add_argument("--adultos", type=int, default=1, help="adultos, 12 anos ou mais (padrão 1)")
+    b.add_argument("--criancas", type=int, default=0, help="crianças de 2 a 11 anos (padrão 0)")
+    b.add_argument("--bebes", type=int, default=0, help="bebês de colo, até 2 anos (padrão 0)")
     b.add_argument("--max-consultas", type=int, default=None,
                    help="teto de combinações de datas (economiza cota da API)")
     b.add_argument("--limite", type=int, default=30, help="linhas na tabela (0 = todas)")

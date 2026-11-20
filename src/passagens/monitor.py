@@ -11,7 +11,7 @@ import yaml
 from .alertas import motivos_de_alerta
 from .busca import buscar_flexivel
 from .historico import Historico
-from .modelos import Oferta
+from .modelos import UM_ADULTO, Oferta, Passageiros
 from .provedores import ProvedorDePrecos
 
 
@@ -22,11 +22,13 @@ class Rota:
     ida: date
     volta: date
     flex: int = 0
-    preco_alvo: float | None = None
+    preco_alvo: float | None = None  # total do grupo
+    passageiros: Passageiros = UM_ADULTO
 
     @property
     def rotulo(self) -> str:
-        return f"{self.origem}→{self.destino} ({self.ida} a {self.volta}, ±{self.flex})"
+        grupo = "" if self.passageiros == UM_ADULTO else f", {self.passageiros.descricao}"
+        return f"{self.origem}→{self.destino} ({self.ida} a {self.volta}, ±{self.flex}{grupo})"
 
 
 @dataclass
@@ -71,6 +73,8 @@ def carregar_rotas(caminho: str | Path) -> list[Rota]:
             volta=_data(r["volta"]),
             flex=int(r.get("flex", 0)),
             preco_alvo=float(r["preco_alvo"]) if r.get("preco_alvo") is not None else None,
+            passageiros=Passageiros(int(r.get("adultos", 1)), int(r.get("criancas", 0)),
+                                    int(r.get("bebes", 0))),
         ))
     return rotas
 
@@ -79,9 +83,9 @@ def verificar_rota(rota: Rota, historico: Historico, provedor: ProvedorDePrecos,
                    paralelo: int = 1) -> ResultadoRota:
     # Referência: média do menor preço de cada consulta anterior, calculada ANTES
     # de gravar os preços novos, para comparar hoje com o passado.
-    media = historico.media_dos_menores(rota.origem, rota.destino)
+    media = historico.media_dos_menores(rota.origem, rota.destino, rota.passageiros)
     busca = buscar_flexivel(provedor, rota.origem, rota.destino, rota.ida, rota.volta,
-                            rota.flex, paralelo=paralelo)
+                            rota.flex, paralelo=paralelo, passageiros=rota.passageiros)
     historico.gravar(busca.ofertas)
     if not busca.ofertas:
         return ResultadoRota(rota, None, media, erros=busca.erros)

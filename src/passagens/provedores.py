@@ -11,7 +11,7 @@ from dataclasses import replace
 from datetime import date, datetime
 from typing import Any, Callable
 
-from .modelos import Oferta
+from .modelos import UM_ADULTO, Oferta, Passageiros
 
 VARIAVEL_CHAVE_SERPAPI = "SERPAPI_API_KEY"
 
@@ -27,8 +27,9 @@ class ProvedorDePrecos(ABC):
     dados_reais: bool = True
 
     @abstractmethod
-    def buscar(self, origem: str, destino: str, ida: date, volta: date) -> list[Oferta]:
-        """Retorna as ofertas encontradas para exatamente essas datas."""
+    def buscar(self, origem: str, destino: str, ida: date, volta: date,
+               passageiros: Passageiros = UM_ADULTO) -> list[Oferta]:
+        """Ofertas para exatamente essas datas; o preço é o total do grupo."""
 
     def detalhar_volta(self, oferta: Oferta) -> Oferta:
         """Completa os horários do voo de volta da oferta (pode custar 1 consulta).
@@ -63,8 +64,15 @@ class ProvedorFalso(ProvedorDePrecos):
         self.fator = fator
         self.consultas: list[tuple[str, str, date, date]] = []
 
-    def buscar(self, origem: str, destino: str, ida: date, volta: date) -> list[Oferta]:
+    # Só para dados fictícios: as companhias reais variam (ver Passageiros).
+    FATOR_CRIANCA = 0.75
+    FATOR_BEBE = 0.10
+
+    def buscar(self, origem: str, destino: str, ida: date, volta: date,
+               passageiros: Passageiros = UM_ADULTO) -> list[Oferta]:
         self.consultas.append((origem, destino, ida, volta))
+        grupo = (passageiros.adultos + passageiros.criancas * self.FATOR_CRIANCA
+                 + passageiros.bebes * self.FATOR_BEBE)
         base = 3000 + zlib.crc32(f"{origem}{destino}".encode()) % 2000
         # Variações fixas pelo dia da semana e pela duração da viagem.
         ajuste_dia = [0, -120, -180, -90, 150, 260, 80][ida.weekday()]
@@ -87,10 +95,11 @@ class ProvedorFalso(ProvedorDePrecos):
                 chegada_ida=chegada,
                 escalas=escalas,
                 duracao_min=duracao,
-                preco=round(total * fator_cia * self.fator, 2),
+                preco=round(total * fator_cia * self.fator * grupo, 2),
                 link=link,
                 provedor=self.nome,
                 token_volta=f"falso:{cia}",
+                passageiros=passageiros,
             )
             for cia, partida, chegada, escalas, duracao, fator_cia in _COMPANHIAS_FALSAS
         ]
@@ -191,17 +200,26 @@ class ProvedorSerpApi(ProvedorDePrecos):
         return dados
 
     @staticmethod
-    def _parametros(origem: str, destino: str, ida: date, volta: date) -> dict[str, Any]:
-        return {
+    def _parametros(origem: str, destino: str, ida: date, volta: date,
+                    passageiros: Passageiros = UM_ADULTO) -> dict[str, Any]:
+        params: dict[str, Any] = {
             "type": 1,  # ida e volta
             "departure_id": origem,
             "arrival_id": destino,
             "outbound_date": ida.isoformat(),
             "return_date": volta.isoformat(),
+            "adults": passageiros.adultos,
         }
+        # Só envia quando há crianças/bebês: mantém o cache das buscas antigas válido.
+        if passageiros.criancas:
+            params["children"] = passageiros.criancas
+        if passageiros.bebes:
+            params["infants_on_lap"] = passageiros.bebes
+        return params
 
-    def buscar(self, origem: str, destino: str, ida: date, volta: date) -> list[Oferta]:
-        dados = self._consultar(self._parametros(origem, destino, ida, volta))
+    def buscar(self, origem: str, destino: str, ida: date, volta: date,
+               passageiros: Passageiros = UM_ADULTO) -> list[Oferta]:
+        dados = self._consultar(self._parametros(origem, destino, ida, volta, passageiros))
         link = dados.get("search_metadata", {}).get("google_flights_url", "")
         ofertas = []
         for item in dados.get("best_flights", []) + dados.get("other_flights", []):
@@ -223,6 +241,7 @@ class ProvedorSerpApi(ProvedorDePrecos):
                     link=link,
                     provedor=self.nome,
                     token_volta=item.get("departure_token"),
+                    passageiros=passageiros,
                 )
             )
         return ofertas
@@ -235,7 +254,8 @@ class ProvedorSerpApi(ProvedorDePrecos):
         """
         if not oferta.token_volta or oferta.tem_volta or oferta.volta_indisponivel:
             return oferta
-        params = self._parametros(oferta.origem, oferta.destino, oferta.data_ida, oferta.data_volta)
+        params = self._parametros(oferta.origem, oferta.destino, oferta.data_ida, oferta.data_volta,
+                                  oferta.passageiros)
         dados = self._consultar({**params, "departure_token": oferta.token_volta})
         opcoes = [o for o in dados.get("best_flights", []) + dados.get("other_flights", [])
                   if o.get("flights") and "price" in o]
