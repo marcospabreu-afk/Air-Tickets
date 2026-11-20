@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block titulo %}Monitorar rotas{% endblock %}
+{% block conteudo %}
+<h1>Monitorar rotas</h1>
+{% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+{% if rotas %}
+<form class="cartao" method="post" action="/monitorar" data-carregando="Verificando rotas…">
+  <p class="resumo">Rotas do arquivo <code>{{ arquivo }}</code>. Alerta quando o menor preço fica abaixo do
+    alvo ou mais de 15% abaixo da média histórica dos menores preços.</p>
+  <div class="tabela">
+  <table>
+    <thead><tr><th>Rota</th><th>Ida</th><th>Volta</th><th>Flex.</th><th>Alvo</th>
+      {% if resultados %}<th>Menor agora</th><th>Média dos menores</th><th>Situação</th><th>Reserva</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for rota in rotas %}
+      {% set r = resultados[loop.index0] if resultados else none %}
+      <tr>
+        <td>{{ rota.origem }} → {{ rota.destino }}</td>
+        <td>{{ rota.ida.strftime('%d/%m/%Y') }}</td><td>{{ rota.volta.strftime('%d/%m/%Y') }}</td>
+        <td>± {{ rota.flex }}</td><td class="num">{{ rota.preco_alvo|brl if rota.preco_alvo else '—' }}</td>
+        {% if resultados %}
+          {% if r.melhor %}
+            <td class="num">{{ r.melhor.preco|brl }}<br><small>{{ r.melhor.companhia }},
+              {{ r.melhor.data_ida.strftime('%d/%m') }}→{{ r.melhor.data_volta.strftime('%d/%m') }}</small></td>
+            <td class="num">{{ r.media_dos_menores|brl if r.media_dos_menores else 'sem histórico' }}</td>
+            <td>{% if r.alerta %}<span class="selo alerta">ALERTA</span><br><small>{{ r.motivos|join('; ') }}</small>
+                {% else %}<span class="selo ok">ok</span>{% endif %}</td>
+            <td><a href="{{ r.melhor.link }}" target="_blank" rel="noopener">Abrir</a></td>
+          {% else %}
+            <td colspan="4">sem dados {{ r.erros|join('; ') }}</td>
+          {% endif %}
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p style="margin:12px 0 0"><button type="submit">Verificar agora</button></p>
+</form>
+{% elif not erro %}
+  <div class="aviso info">Nenhuma rota em <code>{{ arquivo }}</code>.</div>
+{% endif %}
+{% endblock %}

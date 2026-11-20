@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -60,7 +61,9 @@ class Historico:
         caminho = Path(caminho) if caminho else caminho_padrao()
         if str(caminho) != ":memory:":
             caminho.parent.mkdir(parents=True, exist_ok=True)
-        self.conexao = sqlite3.connect(str(caminho))
+        # A busca paralela usa a mesma conexão em várias threads, protegida por trava.
+        self.conexao = sqlite3.connect(str(caminho), check_same_thread=False)
+        self.trava = threading.Lock()
         self.conexao.executescript(_ESQUEMA)
 
     def fechar(self) -> None:
@@ -73,7 +76,7 @@ class Historico:
              o.companhia, o.escalas, o.preco, o.provedor)
             for o in ofertas
         ]
-        with self.conexao:
+        with self.trava, self.conexao:
             self.conexao.executemany(
                 "INSERT INTO precos (consultado_em, origem, destino, data_ida, data_volta,"
                 " companhia, escalas, preco, provedor) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -127,12 +130,14 @@ class CacheSQLite:
 
     def __init__(self, historico: Historico, validade: timedelta = timedelta(hours=6)):
         self.conexao = historico.conexao
+        self.trava = historico.trava
         self.validade = validade
 
     def obter(self, chave: str) -> Any | None:
-        linha = self.conexao.execute(
-            "SELECT criado_em, resposta FROM cache WHERE chave = ?", (chave,)
-        ).fetchone()
+        with self.trava:
+            linha = self.conexao.execute(
+                "SELECT criado_em, resposta FROM cache WHERE chave = ?", (chave,)
+            ).fetchone()
         if not linha:
             return None
         if datetime.now() - datetime.fromisoformat(linha[0]) > self.validade:
@@ -140,7 +145,7 @@ class CacheSQLite:
         return json.loads(linha[1])
 
     def guardar(self, chave: str, valor: Any) -> None:
-        with self.conexao:
+        with self.trava, self.conexao:
             self.conexao.execute(
                 "INSERT OR REPLACE INTO cache (chave, criado_em, resposta) VALUES (?,?,?)",
                 (chave, datetime.now().isoformat(timespec="seconds"), json.dumps(valor)),

@@ -1,0 +1,22 @@
+# Publicação no Render (https://render.com) — plano gratuito.
+# No painel do Render: New > Blueprint > escolha este repositório.
+# Ele vai pedir os valores das variáveis marcadas com "sync: false".
+services:
+  - type: web
+    name: passagens
+    runtime: python
+    plan: free
+    buildCommand: pip install '.[web]'
+    startCommand: gunicorn -w 1 --threads 8 --timeout 300 -b 0.0.0.0:$PORT 'passagens.web:criar_app()'
+    healthCheckPath: /saude
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: SERPAPI_API_KEY      # sua chave da SerpApi (não vai para o git)
+        sync: false
+      - key: PASSAGENS_SENHA      # senha para abrir o site; protege sua cota
+        sync: false
+      - key: PASSAGENS_DB         # no plano grátis o disco é apagado ao reiniciar
+        value: /tmp/historico.db
+      - key: PASSAGENS_ROTAS
+        value: rotas.yaml

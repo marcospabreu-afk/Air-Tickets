@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import zlib
 from abc import ABC, abstractmethod
 from datetime import date, datetime
@@ -143,6 +144,7 @@ class ProvedorSerpApi(ProvedorDePrecos):
             http_get = requests.get
         self._get = http_get
         self.consultas_feitas = 0
+        self._trava = threading.Lock()
 
     def _consultar(self, params: dict[str, Any]) -> dict[str, Any]:
         params = {
@@ -159,7 +161,8 @@ class ProvedorSerpApi(ProvedorDePrecos):
             if guardado is not None:
                 return guardado
         resposta = self._get(URL_SERPAPI, params={**params, "api_key": self.chave}, timeout=60)
-        self.consultas_feitas += 1
+        with self._trava:
+            self.consultas_feitas += 1
         try:
             dados = resposta.json()
         except ValueError as exc:

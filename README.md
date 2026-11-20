@@ -15,6 +15,50 @@ preços de passagens aéreas** de ida e volta, em BRL.
 A escolha da fonte de dados (e por que não Amadeus, Duffel ou Travelpayouts)
 está em [DECISOES.md](DECISOES.md).
 
+## Interface web
+
+Além da linha de comando, há um site com as mesmas funções: **Buscar**,
+**Histórico** e **Monitorar**.
+
+```bash
+pip install -e '.[web]'
+export SERPAPI_API_KEY="sua_chave"
+export PASSAGENS_SENHA="uma_senha"     # opcional, mas recomendado se o site for público
+flask --app 'passagens.web:criar_app()' run
+# abra http://127.0.0.1:5000  (usuário: qualquer; senha: a de PASSAGENS_SENHA)
+```
+
+Nos campos **Origem** e **Destino** não é preciso saber o código IATA: digite a
+cidade, o nome do aeroporto, o país ou o código ("lisboa", "sao paulo", "portugal",
+"GRU") e escolha na lista. A base tem ~7.950 aeroportos do mundo inteiro, com
+nomes de países em português e apelidos em português das cidades mais buscadas
+(Londres, Nova York, Munique…). Se você digitar só a cidade e buscar, o site usa o
+aeroporto principal dela.
+
+As consultas de datas flexíveis são feitas em paralelo (6 por vez): ±1 dia leva
+~10 s e ±3 dias ~1 min.
+
+### Publicar na internet (Render, plano gratuito)
+
+1. Crie uma conta em <https://render.com> (dá para entrar com o GitHub; o plano
+   gratuito não pede cartão para serviços web grátis — confira na hora).
+2. No painel: **New → Blueprint**, escolha o repositório `Air-Tickets`. O arquivo
+   `render.yaml` já configura tudo.
+3. Quando ele pedir, preencha **`SERPAPI_API_KEY`** (sua chave) e
+   **`PASSAGENS_SENHA`** (senha para abrir o site — sem ela, qualquer pessoa com o
+   link pode gastar sua cota da SerpApi).
+4. Ao final o Render mostra o endereço, algo como `https://passagens-xxxx.onrender.com`.
+
+Limitações do plano gratuito do Render:
+- o site "dorme" após 15 min sem acesso; o primeiro acesso depois disso leva ~1 min;
+- o disco é apagado quando o serviço reinicia ou dorme, então **o histórico de preços
+  se perde** (para guardar o histórico seria preciso um banco externo ou plano pago);
+- o monitoramento automático diário continua sendo feito pela linha de comando
+  (cron/Agendador), não pelo site.
+
+O endereço `marcospabreu-afk.github.io/Air-Tickets` (GitHub Pages) mostra apenas
+este README: o GitHub Pages não roda Python, então não serve para o site.
+
 ## Instalação
 
 Requer Python 3.10+.
@@ -167,6 +211,21 @@ gastam cota nem precisam de rede. Cobrem ordenação, datas flexíveis, gravaç�
 resumo do histórico, regra de alerta, conversão da resposta da SerpApi e a CLI
 ponta a ponta.
 
+## Base de aeroportos
+
+`src/passagens/dados/aeroportos.json` é gerado a partir do pacote
+[airportsdata](https://github.com/mborsetti/airportsdata) (licença MIT), com os
+nomes dos países traduzidos pelo [pycountry](https://github.com/pycountry/pycountry).
+Para atualizar:
+
+```bash
+pip install airportsdata pycountry
+python scripts/gerar_aeroportos.py
+```
+
+Os apelidos em português e a lista de aeroportos principais (que aparecem primeiro
+nas sugestões) ficam em `src/passagens/aeroportos.py`.
+
 ## Estrutura
 
 ```
@@ -176,6 +235,10 @@ src/passagens/
   historico.py    # SQLite: histórico de preços e cache de respostas
   alertas.py      # regra de alerta
   cli.py          # comandos buscar / historico / monitorar
+  monitor.py      # verificação das rotas do rotas.yaml (CLI e web)
+  web.py          # interface web (Flask) + templates/
+  aeroportos.py   # busca de aeroportos por código, cidade, nome ou país
+  dados/          # aeroportos.json
 tests/            # pytest
 rotas.yaml        # rotas monitoradas
 DECISOES.md       # comparação de fontes e decisões de arquitetura

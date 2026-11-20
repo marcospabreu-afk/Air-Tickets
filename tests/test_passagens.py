@@ -256,3 +256,9 @@ def test_cli_sem_chave_explica_o_que_falta(tmp_path, capsys, monkeypatch):
     codigo = cli.main(["buscar", "--provedor", "serpapi", "--db", str(tmp_path / "h.db"),
                        "--origem", "CWB", "--destino", "LIS", "--ida", "2027-03-10", "--volta", "2027-03-24"])
     assert codigo == 2 and "SERPAPI_API_KEY" in capsys.readouterr().err
+
+
+def test_busca_paralela_da_o_mesmo_resultado_que_sequencial():
+    seq = buscar_flexivel(ProvedorFalso(), "CWB", "LIS", IDA, VOLTA, flex=3, hoje=HOJE)
+    par = buscar_flexivel(ProvedorFalso(), "CWB", "LIS", IDA, VOLTA, flex=3, hoje=HOJE, paralelo=8)
+    assert par.ofertas == seq.ofertas and len(par.pares_consultados) == 49

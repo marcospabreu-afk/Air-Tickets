@@ -75,3 +75,32 @@ que mede de fato se o preço mais barato disponível caiu.
 fez 49 consultas à SerpApi (1 + 48; a primeira já estava em cache), retornou 594
 ofertas únicas e levou ~4 min 20 s. Menor preço: R$ 4.532 (LATAM, 08/03 → 22/03).
 Isso consome ~20% da cota gratuita mensal — use `--flex` menor no dia a dia.
+
+## 5. Interface web e hospedagem (19/11/2026)
+
+- **Flask** + **gunicorn**, reaproveitando o mesmo pacote da CLI (a lógica de
+  monitoramento foi movida para `monitor.py` para servir aos dois).
+- As combinações de datas passaram a ser consultadas **em paralelo** (CLI: 4, web: 6),
+  porque ±3 dias em sequência levava ~4 min — inviável numa página. Teste real:
+  9 consultas em 9 s.
+- **Senha opcional** (`PASSAGENS_SENHA`, HTTP Basic): o site gasta a cota da SerpApi
+  de quem o publica, então não deve ficar aberto.
+- **Hospedagem: Render, plano gratuito** — roda Python e acessa APIs externas sem
+  lista de bloqueio. Custos/limites: dorme após 15 min sem uso (~1 min para
+  acordar), disco efêmero (histórico se perde ao reiniciar). Descartados: GitHub
+  Pages (só páginas estáticas, não roda Python nem guarda a chave);
+  PythonAnywhere grátis (internet restrita a uma lista de sites; não confirmei a
+  SerpApi nela). Nenhum plano pago foi contratado.
+
+## 6. Seleção de aeroportos na interface web (20/11/2026)
+
+- Campos de origem/destino com **sugestões enquanto se digita** (código, cidade,
+  aeroporto ou país, sem depender de acentos), via `/api/aeroportos`.
+- Base: **airportsdata** (MIT), 7.950 aeroportos com código IATA, embutida no pacote
+  como JSON (~500 KB) para não depender de rede nem de dependência extra em produção.
+  Nomes de países em português gerados uma vez com pycountry (só no script).
+- A base não informa o porte do aeroporto: uma lista curta de **aeroportos
+  principais** e **apelidos em português** (ex.: "londres" → LHR, LGW…) define a
+  ordem das sugestões, para que CWB venha antes de Bacacheri e LHR antes de LCY.
+- Não foi usada uma lista `<datalist>` com todos os aeroportos na página (pesaria
+  ~500 KB em cada acesso e não permite ordenar por relevância).
