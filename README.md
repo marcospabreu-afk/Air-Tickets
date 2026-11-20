@@ -28,6 +28,13 @@ flask --app 'passagens.web:criar_app()' run
 # abra http://127.0.0.1:5000  (usuário: qualquer; senha: a de PASSAGENS_SENHA)
 ```
 
+Nos campos **Origem** e **Destino** não é preciso saber o código IATA: digite a
+cidade, o nome do aeroporto, o país ou o código ("lisboa", "sao paulo", "portugal",
+"GRU") e escolha na lista. A base tem ~7.950 aeroportos do mundo inteiro, com
+nomes de países em português e apelidos em português das cidades mais buscadas
+(Londres, Nova York, Munique…). Se você digitar só a cidade e buscar, o site usa o
+aeroporto principal dela.
+
 As consultas de datas flexíveis são feitas em paralelo (6 por vez): ±1 dia leva
 ~10 s e ±3 dias ~1 min.
 
@@ -204,6 +211,21 @@ gastam cota nem precisam de rede. Cobrem ordenação, datas flexíveis, gravaç�
 resumo do histórico, regra de alerta, conversão da resposta da SerpApi e a CLI
 ponta a ponta.
 
+## Base de aeroportos
+
+`src/passagens/dados/aeroportos.json` é gerado a partir do pacote
+[airportsdata](https://github.com/mborsetti/airportsdata) (licença MIT), com os
+nomes dos países traduzidos pelo [pycountry](https://github.com/pycountry/pycountry).
+Para atualizar:
+
+```bash
+pip install airportsdata pycountry
+python scripts/gerar_aeroportos.py
+```
+
+Os apelidos em português e a lista de aeroportos principais (que aparecem primeiro
+nas sugestões) ficam em `src/passagens/aeroportos.py`.
+
 ## Estrutura
 
 ```
@@ -213,6 +235,10 @@ src/passagens/
   historico.py    # SQLite: histórico de preços e cache de respostas
   alertas.py      # regra de alerta
   cli.py          # comandos buscar / historico / monitorar
+  monitor.py      # verificação das rotas do rotas.yaml (CLI e web)
+  web.py          # interface web (Flask) + templates/
+  aeroportos.py   # busca de aeroportos por código, cidade, nome ou país
+  dados/          # aeroportos.json
 tests/            # pytest
 rotas.yaml        # rotas monitoradas
 DECISOES.md       # comparação de fontes e decisões de arquitetura

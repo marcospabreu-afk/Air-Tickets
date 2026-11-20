@@ -20,7 +20,7 @@ passagens = "passagens.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-passagens = ["templates/*.html"]
+passagens = ["templates/*.html", "dados/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

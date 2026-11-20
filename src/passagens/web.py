@@ -19,16 +19,31 @@ import time
 from datetime import date, timedelta
 from typing import Callable
 
-from flask import Flask, Response, render_template, request
+from flask import Flask, Response, jsonify, render_template, request
 
+from . import aeroportos
 from .alertas import formatar_brl
 from .busca import buscar_flexivel, pares_de_datas
 from .historico import CacheSQLite, Historico
-from .monitor import _data, _iata, carregar_rotas, verificar_rota
+from .monitor import _data, carregar_rotas, verificar_rota
 from .provedores import ErroDeProvedor, ProvedorDePrecos, ProvedorFalso, ProvedorSerpApi
 
 FLEX_MAXIMO = 3
 PARALELO = 6
+
+
+def resolver_aeroporto(texto: str, campo: str) -> str:
+    """Aceita o código IATA ('LIS') ou o nome da cidade/aeroporto ('Lisboa')."""
+    texto = (texto or "").strip()
+    if not texto:
+        raise ValueError(f"informe o aeroporto de {campo}")
+    codigo = texto.split()[0].upper()
+    if len(codigo) == 3 and codigo.isalpha() and aeroportos.existe(codigo):
+        return codigo
+    encontrados = aeroportos.buscar(texto, limite=1)
+    if not encontrados:
+        raise ValueError(f"aeroporto de {campo} não encontrado: {texto!r}")
+    return encontrados[0].iata
 
 
 def _provedor_padrao(historico: Historico) -> ProvedorDePrecos:
@@ -68,6 +83,18 @@ def criar_app(
     def saude():
         return {"ok": True}
 
+    @app.get("/api/aeroportos")
+    def api_aeroportos():
+        lista = aeroportos.buscar(request.args.get("q", ""), limite=12)
+        return jsonify([{"iata": a.iata, "cidade": a.cidade, "nome": a.nome, "pais": a.pais,
+                         "rotulo": a.rotulo} for a in lista])
+
+    def rotulo(codigo: str) -> str:
+        a = aeroportos.todos().get((codigo or "").strip().upper())
+        return a.rotulo if a else ""
+
+    app.jinja_env.globals["rotulo_aeroporto"] = rotulo
+
     def contexto_base(historico: Historico) -> dict:
         try:
             provedor = criar_provedor(historico)
@@ -104,7 +131,11 @@ def criar_app(
             consultas = None
             segundos = None
             try:
-                origem, destino = _iata(form["origem"]), _iata(form["destino"])
+                origem = resolver_aeroporto(form["origem"], "origem")
+                destino = resolver_aeroporto(form["destino"], "destino")
+                if origem == destino:
+                    raise ValueError("origem e destino são o mesmo aeroporto")
+                form["origem"], form["destino"] = origem, destino
                 ida, volta = _data(form["ida"]), _data(form["volta"])
                 flex = int(form["flex"] or 0)
                 if not 0 <= flex <= FLEX_MAXIMO:

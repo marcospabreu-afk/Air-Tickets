@@ -91,3 +91,16 @@ Isso consome ~20% da cota gratuita mensal — use `--flex` menor no dia a dia.
   Pages (só páginas estáticas, não roda Python nem guarda a chave);
   PythonAnywhere grátis (internet restrita a uma lista de sites; não confirmei a
   SerpApi nela). Nenhum plano pago foi contratado.
+
+## 6. Seleção de aeroportos na interface web (20/11/2026)
+
+- Campos de origem/destino com **sugestões enquanto se digita** (código, cidade,
+  aeroporto ou país, sem depender de acentos), via `/api/aeroportos`.
+- Base: **airportsdata** (MIT), 7.950 aeroportos com código IATA, embutida no pacote
+  como JSON (~500 KB) para não depender de rede nem de dependência extra em produção.
+  Nomes de países em português gerados uma vez com pycountry (só no script).
+- A base não informa o porte do aeroporto: uma lista curta de **aeroportos
+  principais** e **apelidos em português** (ex.: "londres" → LHR, LGW…) define a
+  ordem das sugestões, para que CWB venha antes de Bacacheri e LHR antes de LCY.
+- Não foi usada uma lista `<datalist>` com todos os aeroportos na página (pesaria
+  ~500 KB em cada acesso e não permite ordenar por relevância).

@@ -37,12 +37,26 @@
   .aviso { border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; }
   .aviso.erro { background: var(--erro-fundo); color: var(--erro-texto); }
   .aviso.info { background: var(--alerta-fundo); color: var(--alerta-texto); }
-  .formulario { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;
-                align-items: end; }
+  .formulario { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px;
+                align-items: start; }
+  .formulario > div:last-child { align-self: center; }
   label { display: block; font-size: 13px; color: var(--suave); margin-bottom: 4px; }
   input, select { width: 100%; padding: 9px 10px; border: 1px solid var(--borda); border-radius: 8px;
                   background: var(--fundo); color: var(--texto); font: inherit; }
-  input[name=origem], input[name=destino] { text-transform: uppercase; }
+  .campo-aeroporto { position: relative; }
+  .sugestoes { position: absolute; z-index: 10; left: 0; right: 0; top: 100%; margin: 2px 0 0;
+               padding: 4px; list-style: none; background: var(--cartao); border: 1px solid var(--borda);
+               border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.15); max-height: 320px;
+               overflow-y: auto; min-width: min(300px, calc(100vw - 32px)); }
+  /* o campo da direita abre a lista alinhada à direita, para não sair da tela */
+  .campo-aeroporto + .campo-aeroporto .sugestoes { left: auto; right: 0; }
+  .sugestoes li { display: grid; grid-template-columns: 40px 1fr; gap: 0 8px; padding: 7px 8px;
+                  border-radius: 6px; cursor: pointer; font-size: 14px; }
+  .sugestoes li b { grid-row: span 2; color: var(--destaque); }
+  .sugestoes li em { font-style: normal; font-size: 12px; color: var(--suave); }
+  .sugestoes li:hover, .sugestoes li[aria-selected=true] { background: var(--linha-par); }
+  .rotulo-aeroporto { display: block; min-height: 1.2em; margin-top: 3px; font-size: 12px;
+                      color: var(--suave); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   button { padding: 10px 18px; border: 0; border-radius: 8px; background: var(--destaque);
            color: var(--destaque-texto); font: inherit; font-weight: 600; cursor: pointer; }
   button[disabled] { opacity: .6; cursor: wait; }
@@ -87,5 +101,6 @@
     });
   });
 </script>
+{% block scripts %}{% endblock %}
 </body>
 </html>
