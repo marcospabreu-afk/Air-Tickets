@@ -44,6 +44,12 @@
   input, select { width: 100%; padding: 9px 10px; border: 1px solid var(--borda); border-radius: 8px;
                   background: var(--fundo); color: var(--texto); font: inherit; }
   .campo-aeroporto { position: relative; }
+  fieldset.passageiros { border: 0; margin: 0; padding: 0; grid-column: span 2; min-width: 0; }
+  fieldset.passageiros legend { font-size: 13px; color: var(--suave); margin-bottom: 4px; padding: 0; }
+  .passageiros-campos { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .passageiros-campos label { margin: 0; color: var(--texto); font-size: 13px; }
+  .passageiros-campos small { display: block; color: var(--suave); font-size: 11px; }
+  @media (max-width: 520px) { fieldset.passageiros { grid-column: 1 / -1; } }
   .sugestoes { position: absolute; z-index: 10; left: 0; right: 0; top: 100%; margin: 2px 0 0;
                padding: 4px; list-style: none; background: var(--cartao); border: 1px solid var(--borda);
                border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.15); max-height: 320px;

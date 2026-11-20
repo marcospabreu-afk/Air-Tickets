@@ -117,3 +117,19 @@ Isso consome ~20% da cota gratuita mensal — use `--flex` menor no dia a dia.
   nenhuma volta, a linha mostra "não informado" (e não consulta de novo).
 - Filtros feitos no navegador, sobre todas as ofertas já carregadas: instantâneos e
   sem custo de cota. O filtro de escalas usa a ida, que é conhecida para todas.
+
+## 8. Vários passageiros e crianças (20/11/2026)
+
+- Teste real na SerpApi (CWB→LIS): o preço devolvido é o **total do grupo**. 2 adultos =
+  exatamente 2×; 1 adulto + 1 criança = 2× na LATAM (criança paga cheio) e 1,78× numa
+  combinação com Lufthansa; bebê de colo = +9% a +15%.
+- Como o desconto de criança varia por companhia, **não** foi usada uma fórmula fixa
+  (ex.: criança = 75%): o sistema pede o preço do grupo à fonte (`adults`, `children`,
+  `infants_on_lap`) e mostra o total e a média por pessoa. A fórmula fixa existe só no
+  provedor falso, para testes (criança 75%, bebê 10%).
+- Bebê com assento próprio não foi incluído (raro; pode ser somado depois via
+  `infants_in_seat`).
+- O histórico ganhou a coluna `passageiros` ('1A', '2A1C', '2A1C1B'); bancos antigos são
+  migrados automaticamente (registros existentes = 1 adulto). Resumo, média e alerta
+  são calculados por composição de grupo.
+- Para não invalidar o cache, `children`/`infants_on_lap` só são enviados quando > 0.

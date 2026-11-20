@@ -5,18 +5,19 @@
 {% if resumos %}
 <div class="cartao tabela">
   <table>
-    <thead><tr><th>Rota</th><th>Menor</th><th>Maior</th><th>Média (todas)</th>
+    <thead><tr><th>Rota</th><th>Passageiros</th><th>Menor</th><th>Maior</th><th>Média (todas)</th>
       <th>Média dos menores*</th><th>Registros</th><th>Primeira consulta</th><th>Última consulta</th></tr></thead>
     <tbody>
     {% for r in resumos %}
-      <tr><td>{{ r.origem }} → {{ r.destino }}</td><td class="num">{{ r.menor|brl }}</td>
+      <tr><td>{{ r.origem }} → {{ r.destino }}</td><td>{{ r.grupo.descricao }}</td><td class="num">{{ r.menor|brl }}</td>
         <td class="num">{{ r.maior|brl }}</td><td class="num">{{ r.media|brl }}</td>
-        <td class="num">{{ menores[(r.origem, r.destino)]|brl }}</td><td>{{ r.registros }}</td>
+        <td class="num">{{ menores[(r.origem, r.destino, r.passageiros)]|brl }}</td><td>{{ r.registros }}</td>
         <td>{{ r.primeira.replace('T', ' ') }}</td><td>{{ r.ultima.replace('T', ' ') }}</td></tr>
     {% endfor %}
     </tbody>
   </table>
-  <p class="dica">* Média do menor preço de cada consulta: é a referência do alerta de queda de 15%.</p>
+  <p class="dica">* Média do menor preço de cada consulta: é a referência do alerta de queda de 15%.
+     Os preços são o total do grupo, por isso cada composição de passageiros tem sua própria linha.</p>
 </div>
 {% else %}
   <div class="aviso info">Histórico vazio. Faça uma busca primeiro.</div>

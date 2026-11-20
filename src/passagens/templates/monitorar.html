@@ -15,7 +15,7 @@
     {% for rota in rotas %}
       {% set r = resultados[loop.index0] if resultados else none %}
       <tr>
-        <td>{{ rota.origem }} → {{ rota.destino }}</td>
+        <td>{{ rota.origem }} → {{ rota.destino }}<br><small>{{ rota.passageiros.descricao }}</small></td>
         <td>{{ rota.ida.strftime('%d/%m/%Y') }}</td><td>{{ rota.volta.strftime('%d/%m/%Y') }}</td>
         <td>± {{ rota.flex }}</td><td class="num">{{ rota.preco_alvo|brl if rota.preco_alvo else '—' }}</td>
         {% if resultados %}

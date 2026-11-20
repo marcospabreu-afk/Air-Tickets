@@ -25,7 +25,7 @@ from . import aeroportos
 from .alertas import formatar_brl
 from .busca import buscar_flexivel, detalhar_voltas, pares_de_datas
 from .historico import CacheSQLite, Historico
-from .modelos import Oferta
+from .modelos import Oferta, Passageiros
 from .monitor import _data, carregar_rotas, verificar_rota
 from .provedores import ErroDeProvedor, ProvedorDePrecos, ProvedorFalso, ProvedorSerpApi
 
@@ -139,6 +139,9 @@ def criar_app(
             "volta": request.args.get("volta", (hoje + timedelta(days=74)).isoformat()),
             "flex": request.args.get("flex", "1"),
             "voltas": request.args.get("voltas", str(VOLTAS_PADRAO)),
+            "adultos": request.args.get("adultos", "1"),
+            "criancas": request.args.get("criancas", "0"),
+            "bebes": request.args.get("bebes", "0"),
         }
         historico = Historico(db)
         try:
@@ -151,7 +154,7 @@ def criar_app(
     @app.post("/buscar")
     def buscar():
         form = {k: request.form.get(k, "").strip()
-                for k in ("origem", "destino", "ida", "volta", "flex", "voltas")}
+                for k in ("origem", "destino", "ida", "volta", "flex", "voltas", "adultos", "criancas", "bebes")}
         historico = Historico(db)
         try:
             ctx = contexto_base(historico)
@@ -159,7 +162,10 @@ def criar_app(
             resultado = None
             consultas = None
             segundos = None
+            passageiros = None
             try:
+                passageiros = Passageiros(int(form["adultos"] or 1), int(form["criancas"] or 0),
+                                          int(form["bebes"] or 0))
                 origem = resolver_aeroporto(form["origem"], "origem")
                 destino = resolver_aeroporto(form["destino"], "destino")
                 if origem == destino:
@@ -178,7 +184,7 @@ def criar_app(
             if erro is None and ctx["provedor"] is not None:
                 inicio = time.monotonic()
                 resultado = buscar_flexivel(ctx["provedor"], origem, destino, ida, volta, flex,
-                                            paralelo=PARALELO)
+                                            paralelo=PARALELO, passageiros=passageiros)
                 historico.gravar(resultado.ofertas)
                 if voltas:
                     resultado.ofertas, erros_volta = detalhar_voltas(ctx["provedor"], resultado.ofertas,
@@ -190,6 +196,7 @@ def criar_app(
             historico.fechar()
         return render_template("busca.html", form=form, resultado=resultado, erro=erro,
                                facetas=facetas(resultado.ofertas) if resultado else None,
+                               passageiros=passageiros,
                                consultas=consultas, segundos=segundos, flex_maximo=FLEX_MAXIMO,
                                voltas_opcoes=VOLTAS_OPCOES, pagina="busca", **ctx)
 
@@ -204,6 +211,7 @@ def criar_app(
                 data_ida=_data(dados.get("ida")), data_volta=_data(dados.get("volta")),
                 partida_ida="", chegada_ida="", escalas=0, duracao_min=0,
                 preco=float(dados.get("preco")), link="", provedor="", token_volta=str(dados.get("token") or ""),
+                passageiros=Passageiros.do_codigo(str(dados.get("passageiros") or "1A")),
             )
         except (TypeError, ValueError) as exc:
             return jsonify({"erro": f"pedido inválido: {exc}"}), 400
@@ -219,15 +227,16 @@ def criar_app(
             return jsonify({"indisponivel": True, "erro": "a fonte não informou o voo de volta"}), 404
         return jsonify({"partida": detalhada.partida_volta, "chegada": detalhada.chegada_volta,
                         "escalas": detalhada.escalas_volta, "duracao": duracao(detalhada.duracao_volta_min or 0),
-                        "preco": detalhada.preco, "preco_brl": formatar_brl(detalhada.preco)})
+                        "preco": detalhada.preco, "preco_brl": formatar_brl(detalhada.preco),
+                        "total_passageiros": detalhada.passageiros.total})
 
     @app.get("/historico")
     def ver_historico():
         historico = Historico(db)
         try:
             resumos = historico.resumo()
-            menores = {(r.origem, r.destino): historico.media_dos_menores(r.origem, r.destino)
-                       for r in resumos}
+            menores = {(r.origem, r.destino, r.passageiros):
+                       historico.media_dos_menores(r.origem, r.destino, r.grupo) for r in resumos}
         finally:
             historico.fechar()
         return render_template("historico.html", resumos=resumos, menores=menores, pagina="historico")

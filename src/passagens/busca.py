@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from .modelos import Oferta
+from .modelos import UM_ADULTO, Oferta, Passageiros
 from .provedores import ErroDeProvedor, ProvedorDePrecos
 
 
@@ -59,6 +59,7 @@ def buscar_flexivel(
     max_consultas: int | None = None,
     hoje: date | None = None,
     paralelo: int = 1,
+    passageiros: Passageiros = UM_ADULTO,
 ) -> ResultadoBusca:
     """Consulta cada combinação de datas (até `paralelo` ao mesmo tempo)."""
     resultado = ResultadoBusca()
@@ -70,7 +71,7 @@ def buscar_flexivel(
 
     def consultar(par: tuple[date, date]):
         try:
-            return par, provedor.buscar(origem, destino, *par), None
+            return par, provedor.buscar(origem, destino, *par, passageiros), None
         except ErroDeProvedor as exc:
             return par, None, exc
 
