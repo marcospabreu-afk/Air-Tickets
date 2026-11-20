@@ -23,10 +23,18 @@
           {{ 'Exatas · 1 consulta' if n == 0 else '±%d · %d consultas'|format(n, (2*n+1)**2) }}</option>
         {% endfor %}
       </select></div>
+    <div><label for="voltas">Horário da volta</label>
+      <select id="voltas" name="voltas">
+        {% for n in voltas_opcoes %}
+        <option value="{{ n }}" {{ 'selected' if form.voltas|string == n|string }}>
+          {{ 'só pelo botão' if n == 0 else '%d mais baratas'|format(n) }}</option>
+        {% endfor %}
+      </select></div>
     <div><button type="submit">Buscar</button></div>
   </div>
-  <p class="dica">Cada combinação de datas gasta 1 consulta da SerpApi (plano grátis: 250/mês).
-     Buscas repetidas em até 6 h vêm do cache e não gastam cota.</p>
+  <p class="dica">Cada combinação de datas gasta 1 consulta da SerpApi (plano grátis: 250/mês), e cada
+     horário de volta mais 1. Nas demais ofertas, use o botão "ver volta". Buscas repetidas em até 6 h
+     vêm do cache e não gastam cota.</p>
 </form>
 
 {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
@@ -34,34 +42,91 @@
 {% if resultado is not none %}
   {% for e in resultado.erros %}<div class="aviso erro">{{ e }}</div>{% endfor %}
   {% if resultado.ofertas %}
+  {% set f = facetas %}
+  <details class="cartao filtros" id="filtros" open>
+    <summary>Filtros <span id="f-resumo"></span></summary>
+    <div class="filtros-grade">
+      <div><label for="f-ordem">Ordenar por</label>
+        <select id="f-ordem">
+          <option value="preco">Menor preço</option>
+          <option value="duracao">Menor duração da ida</option>
+          <option value="cedo">Partida mais cedo</option>
+          <option value="tarde">Partida mais tarde</option>
+        </select></div>
+      <div><label for="f-escalas">Escalas na ida</label>
+        <select id="f-escalas">
+          <option value="9">Qualquer número</option>
+          <option value="0">Só voos diretos</option>
+          <option value="1">Até 1 escala</option>
+          <option value="2">Até 2 escalas</option>
+        </select></div>
+      <div><label for="f-preco">Preço máximo: <b id="f-preco-valor"></b></label>
+        <input type="range" id="f-preco" min="{{ f.preco_min|round(0, 'floor')|int }}"
+               max="{{ f.preco_max|round(0, 'ceil')|int }}" step="1" value="{{ f.preco_max|round(0, 'ceil')|int }}"></div>
+      <div><label for="f-duracao">Duração máx. da ida: <b id="f-duracao-valor"></b></label>
+        <input type="range" id="f-duracao" min="{{ (f.duracao_min / 60)|round(0, 'floor')|int }}"
+               max="{{ (f.duracao_max / 60)|round(0, 'ceil')|int }}" step="1"
+               value="{{ (f.duracao_max / 60)|round(0, 'ceil')|int }}"></div>
+      <div><label for="f-ida">Data de ida</label>
+        <select id="f-ida"><option value="">Todas</option>
+          {% for d in f.datas_ida %}<option value="{{ d.isoformat() }}">{{ d|dia_semana }} {{ d.strftime('%d/%m') }}</option>{% endfor %}
+        </select></div>
+      <div><label for="f-volta">Data de volta</label>
+        <select id="f-volta"><option value="">Todas</option>
+          {% for d in f.datas_volta %}<option value="{{ d.isoformat() }}">{{ d|dia_semana }} {{ d.strftime('%d/%m') }}</option>{% endfor %}
+        </select></div>
+    </div>
+    <fieldset><legend>Partida da ida</legend>
+      {% for valor, nome in [('0', 'Madrugada 0–6h'), ('1', 'Manhã 6–12h'), ('2', 'Tarde 12–18h'), ('3', 'Noite 18–24h')] %}
+      <label class="opcao"><input type="checkbox" name="f-periodo" value="{{ valor }}" checked> {{ nome }}</label>
+      {% endfor %}
+    </fieldset>
+    <fieldset><legend>Companhias</legend>
+      {% for cia, qtd in f.companhias %}
+      <label class="opcao"><input type="checkbox" name="f-cia" value="{{ cia }}" checked> {{ cia }} <small>({{ qtd }})</small></label>
+      {% endfor %}
+      <span class="atalhos"><a href="#" data-marcar="f-cia:1">todas</a> · <a href="#" data-marcar="f-cia:0">nenhuma</a></span>
+    </fieldset>
+    <p class="filtros-rodape"><span id="f-contagem"></span> <button type="button" class="secundario" id="f-limpar">Limpar filtros</button></p>
+  </details>
+
   <div class="cartao">
     <p class="resumo">{{ resultado.ofertas|length }} ofertas em {{ resultado.pares_consultados|length }}
       combinações de datas · preço total ida e volta, 1 adulto, em BRL
       {% if consultas is not none %} · {{ consultas }} consulta(s) nova(s) à API{% endif %}
       {% if segundos is not none %} · {{ '%.0f'|format(segundos) }} s{% endif %}</p>
     <div class="tabela">
-    <table>
+    <table id="resultados" data-origem="{{ form.origem }}" data-destino="{{ form.destino }}">
       <thead><tr><th>#</th><th>Preço total</th><th>Companhia</th><th>Ida</th><th>Horário ida</th>
-        <th>Volta</th><th>Horário volta</th><th>Escalas</th><th>Duração ida</th><th>Reserva</th></tr></thead>
+        <th>Volta</th><th>Horário volta</th><th>Escalas ida/volta</th><th>Duração ida</th><th>Reserva</th></tr></thead>
       <tbody>
-      {% for o in resultado.ofertas[:100] %}
-        <tr class="{{ 'mais-barato' if loop.first }}">
-          <td>{{ loop.index }}</td>
-          <td class="num">{{ o.preco|brl }}</td>
+      {% for o in resultado.ofertas %}
+        <tr data-preco="{{ o.preco }}" data-cias="{{ o.companhia }}" data-escalas="{{ o.escalas }}"
+            data-partida="{{ (o.partida_ida[:2]|int) * 60 + (o.partida_ida[3:5]|int) }}"
+            data-duracao="{{ o.duracao_min }}" data-ida="{{ o.data_ida.isoformat() }}"
+            data-volta="{{ o.data_volta.isoformat() }}" data-ordem="{{ loop.index0 }}">
+          <td class="pos">{{ loop.index }}</td>
+          <td class="num preco" data-original="{{ o.preco|brl }}">{{ o.preco|brl }}{% if o.preco_anunciado %}<br><small class="anunciado">anunciado
+            {{ o.preco_anunciado|brl }}</small>{% endif %}</td>
           <td>{{ o.companhia }}</td>
           <td>{{ o.data_ida.strftime('%d/%m/%Y') }}</td>
           <td>{{ o.partida_ida }} → {{ o.chegada_ida }}</td>
           <td>{{ o.data_volta.strftime('%d/%m/%Y') }}</td>
-          <td>{{ (o.partida_volta ~ ' → ' ~ o.chegada_volta) if o.partida_volta else '—' }}</td>
-          <td>{{ 'direto' if o.escalas == 0 else o.escalas }}</td>
+          <td class="volta">
+            {% if o.tem_volta %}{{ o.partida_volta }} → {{ o.chegada_volta }}
+            {% elif o.volta_indisponivel %}<small class="anunciado">não informado</small>
+            {% elif o.token_volta %}<button type="button" class="ver-volta secundario" data-token="{{ o.token_volta }}"
+                data-companhia="{{ o.companhia }}">ver volta</button>
+            {% else %}—{% endif %}</td>
+          <td class="escalas">{{ escalas_txt(o) }}</td>
           <td>{{ o.duracao_min|duracao }}</td>
-          <td><a href="{{ o.link }}" target="_blank" rel="noopener">Abrir no Google Flights</a></td>
+          <td><a href="{{ o.link }}" target="_blank" rel="noopener" title="Abrir no Google Flights">Reservar ↗</a></td>
         </tr>
       {% endfor %}
+      <tr id="sem-resultado" hidden><td colspan="10">Nenhuma oferta com esses filtros.</td></tr>
       </tbody>
     </table>
     </div>
-    {% if resultado.ofertas|length > 100 %}<p class="dica">Mostrando as 100 mais baratas.</p>{% endif %}
   </div>
   {% else %}
     <div class="aviso info">Nenhuma oferta encontrada para essas datas.</div>
@@ -129,6 +194,109 @@
     entrada.addEventListener("blur", function () { setTimeout(fechar, 100); });
   }
   iniciar("origem"); iniciar("destino");
+})();
+
+(function () {
+  var tabela = document.getElementById("resultados");
+  if (!tabela) return;
+  var corpo = tabela.tBodies[0];
+  var vazio = document.getElementById("sem-resultado");
+  var linhas = Array.prototype.filter.call(corpo.rows, function (r) { return r !== vazio; });
+  var brl = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+  function $(id) { return document.getElementById(id); }
+  function marcados(nome) {
+    return Array.prototype.filter.call(document.getElementsByName(nome), function (c) { return c.checked; })
+      .map(function (c) { return c.value; });
+  }
+  var padroes = { "f-ordem": "preco", "f-escalas": "9", "f-ida": "", "f-volta": "",
+                  "f-preco": $("f-preco").max, "f-duracao": $("f-duracao").max };
+
+  function aplicar() {
+    var maxPreco = +$("f-preco").value, maxDur = +$("f-duracao").value * 60;
+    var escalas = +$("f-escalas").value, ida = $("f-ida").value, volta = $("f-volta").value;
+    var periodos = marcados("f-periodo"), cias = marcados("f-cia");
+    $("f-preco-valor").textContent = brl.format(maxPreco);
+    $("f-duracao-valor").textContent = $("f-duracao").value + "h";
+    var visiveis = linhas.filter(function (r) {
+      var d = r.dataset;
+      var periodo = String(Math.min(3, Math.floor(+d.partida / 360)));
+      var temCia = d.cias.split(" / ").some(function (c) { return cias.indexOf(c) >= 0; });
+      return +d.preco <= maxPreco && +d.duracao <= maxDur && +d.escalas <= escalas &&
+        (!ida || d.ida === ida) && (!volta || d.volta === volta) &&
+        periodos.indexOf(periodo) >= 0 && temCia;
+    });
+    var chave = { preco: function (d) { return [+d.preco, +d.ordem]; },
+                  duracao: function (d) { return [+d.duracao, +d.preco]; },
+                  cedo: function (d) { return [+d.partida, +d.preco]; },
+                  tarde: function (d) { return [-d.partida, +d.preco]; } }[$("f-ordem").value];
+    visiveis.sort(function (a, b) {
+      var x = chave(a.dataset), y = chave(b.dataset);
+      return x[0] - y[0] || x[1] - y[1];
+    });
+    linhas.forEach(function (r) { r.hidden = true; r.classList.remove("mais-barato"); });
+    visiveis.forEach(function (r, i) {
+      r.hidden = false; r.querySelector(".pos").textContent = i + 1; corpo.insertBefore(r, vazio);
+    });
+    if (visiveis.length) visiveis[0].classList.add("mais-barato");
+    vazio.hidden = visiveis.length > 0;
+    $("f-contagem").textContent = "Mostrando " + visiveis.length + " de " + linhas.length + " ofertas";
+    $("f-resumo").textContent = "· " + visiveis.length + " de " + linhas.length;
+  }
+
+  document.getElementById("filtros").addEventListener("input", aplicar);
+  document.getElementById("filtros").addEventListener("change", aplicar);
+  Array.prototype.forEach.call(document.querySelectorAll("[data-marcar]"), function (a) {
+    a.addEventListener("click", function (e) {
+      e.preventDefault();
+      var p = a.dataset.marcar.split(":");
+      Array.prototype.forEach.call(document.getElementsByName(p[0]), function (c) { c.checked = p[1] === "1"; });
+      aplicar();
+    });
+  });
+  $("f-limpar").addEventListener("click", function () {
+    Object.keys(padroes).forEach(function (id) { $(id).value = padroes[id]; });
+    Array.prototype.forEach.call(document.querySelectorAll("#filtros input[type=checkbox]"),
+      function (c) { c.checked = true; });
+    aplicar();
+  });
+
+  corpo.addEventListener("click", function (e) {
+    var botao = e.target.closest ? e.target.closest(".ver-volta") : null;
+    if (!botao) return;
+    var linha = botao.closest("tr"), celula = botao.parentNode;
+    botao.disabled = true; botao.textContent = "buscando…";
+    fetch("/api/volta", {
+      method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token: botao.dataset.token, companhia: botao.dataset.companhia,
+        origem: tabela.dataset.origem, destino: tabela.dataset.destino,
+        ida: linha.dataset.ida, volta: linha.dataset.volta, preco: +linha.dataset.preco })
+    }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
+      .then(function (res) {
+        if (res.j.indisponivel) {
+          celula.innerHTML = '<small class="anunciado">não informado</small>'; return;
+        }
+        if (!res.ok) throw new Error(res.j.erro || "erro");
+        var j = res.j;
+        celula.textContent = j.partida + " → " + j.chegada;
+        var esc = linha.querySelector(".escalas");
+        esc.textContent = esc.textContent.split(" / ")[0] + " / " + (j.escalas === 0 ? "direto" : j.escalas);
+        if (+j.preco !== +linha.dataset.preco) {
+          var celulaPreco = linha.querySelector(".preco");
+          celulaPreco.innerHTML = "";
+          celulaPreco.appendChild(document.createTextNode(j.preco_brl));
+          var nota = document.createElement("small"); nota.className = "anunciado";
+          nota.textContent = "anunciado " + celulaPreco.dataset.original;
+          celulaPreco.appendChild(document.createElement("br")); celulaPreco.appendChild(nota);
+          linha.dataset.preco = j.preco;
+          aplicar();
+        }
+      })
+      .catch(function (err) {
+        botao.disabled = false; botao.textContent = "tentar de novo"; botao.title = err.message;
+      });
+  });
+  if (window.matchMedia("(max-width: 700px)").matches) $("filtros").open = false;
+  aplicar();
 })();
 </script>
 {% endblock %}

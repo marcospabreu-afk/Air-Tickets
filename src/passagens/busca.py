@@ -84,3 +84,26 @@ def buscar_flexivel(
             resultado.pares_consultados.append((data_ida, data_volta))
     resultado.ofertas = ordenar(remover_duplicadas(resultado.ofertas))
     return resultado
+
+
+def detalhar_voltas(provedor: ProvedorDePrecos, ofertas: list[Oferta], quantidade: int,
+                    paralelo: int = 1) -> tuple[list[Oferta], list[str]]:
+    """Busca os horários da volta das `quantidade` primeiras ofertas (1 consulta cada).
+
+    Retorna a lista reordenada (o preço pode ser ajustado pela fonte) e os erros.
+    """
+    quantidade = max(0, min(quantidade, len(ofertas)))
+    if quantidade == 0:
+        return ofertas, []
+    erros: list[str] = []
+
+    def detalhar(oferta: Oferta) -> Oferta:
+        try:
+            return provedor.detalhar_volta(oferta)
+        except ErroDeProvedor as exc:
+            erros.append(f"volta de {oferta.companhia} {oferta.data_ida} → {oferta.data_volta}: {exc}")
+            return oferta
+
+    with ThreadPoolExecutor(max_workers=max(1, paralelo)) as executor:
+        detalhadas = list(executor.map(detalhar, ofertas[:quantidade]))
+    return ordenar(detalhadas + ofertas[quantidade:]), erros

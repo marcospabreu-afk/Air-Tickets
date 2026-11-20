@@ -23,12 +23,15 @@ from flask import Flask, Response, jsonify, render_template, request
 
 from . import aeroportos
 from .alertas import formatar_brl
-from .busca import buscar_flexivel, pares_de_datas
+from .busca import buscar_flexivel, detalhar_voltas, pares_de_datas
 from .historico import CacheSQLite, Historico
+from .modelos import Oferta
 from .monitor import _data, carregar_rotas, verificar_rota
 from .provedores import ErroDeProvedor, ProvedorDePrecos, ProvedorFalso, ProvedorSerpApi
 
 FLEX_MAXIMO = 3
+VOLTAS_OPCOES = (0, 5, 10, 20)  # horários da volta buscados automaticamente
+VOLTAS_PADRAO = 5
 PARALELO = 6
 
 
@@ -44,6 +47,22 @@ def resolver_aeroporto(texto: str, campo: str) -> str:
     if not encontrados:
         raise ValueError(f"aeroporto de {campo} não encontrado: {texto!r}")
     return encontrados[0].iata
+
+
+def facetas(ofertas: list[Oferta]) -> dict:
+    """Valores disponíveis para os filtros da página de resultados."""
+    if not ofertas:
+        return {}
+    contagem: dict[str, int] = {}
+    for o in ofertas:
+        for cia in o.companhia.split(" / "):
+            contagem[cia] = contagem.get(cia, 0) + 1
+    return {
+        "preco_min": min(o.preco for o in ofertas), "preco_max": max(o.preco for o in ofertas),
+        "duracao_min": min(o.duracao_min for o in ofertas), "duracao_max": max(o.duracao_min for o in ofertas),
+        "datas_ida": sorted({o.data_ida for o in ofertas}), "datas_volta": sorted({o.data_volta for o in ofertas}),
+        "companhias": sorted(contagem.items(), key=lambda kv: (-kv[1], kv[0])),
+    }
 
 
 def _provedor_padrao(historico: Historico) -> ProvedorDePrecos:
@@ -69,6 +88,14 @@ def criar_app(
         return f"{minutos // 60}h{minutos % 60:02d}"
 
     app.jinja_env.filters["duracao"] = duracao
+    app.jinja_env.filters["dia_semana"] = lambda d: ("seg", "ter", "qua", "qui", "sex", "sáb", "dom")[d.weekday()]
+
+    def escalas_txt(o: Oferta) -> str:
+        def texto(n):
+            return "?" if n is None else ("direto" if n == 0 else str(n))
+        return f"{texto(o.escalas)} / {texto(o.escalas_volta)}" if o.tem_volta else texto(o.escalas)
+
+    app.jinja_env.globals["escalas_txt"] = escalas_txt
 
     @app.before_request
     def exigir_senha():
@@ -111,6 +138,7 @@ def criar_app(
             "ida": request.args.get("ida", (hoje + timedelta(days=60)).isoformat()),
             "volta": request.args.get("volta", (hoje + timedelta(days=74)).isoformat()),
             "flex": request.args.get("flex", "1"),
+            "voltas": request.args.get("voltas", str(VOLTAS_PADRAO)),
         }
         historico = Historico(db)
         try:
@@ -118,11 +146,12 @@ def criar_app(
         finally:
             historico.fechar()
         return render_template("busca.html", form=form, resultado=None, flex_maximo=FLEX_MAXIMO,
-                               pagina="busca", **ctx)
+                               voltas_opcoes=VOLTAS_OPCOES, pagina="busca", **ctx)
 
     @app.post("/buscar")
     def buscar():
-        form = {k: request.form.get(k, "").strip() for k in ("origem", "destino", "ida", "volta", "flex")}
+        form = {k: request.form.get(k, "").strip()
+                for k in ("origem", "destino", "ida", "volta", "flex", "voltas")}
         historico = Historico(db)
         try:
             ctx = contexto_base(historico)
@@ -141,20 +170,56 @@ def criar_app(
                 if not 0 <= flex <= FLEX_MAXIMO:
                     raise ValueError(f"flexibilidade deve ser de 0 a {FLEX_MAXIMO} dias")
                 pares_de_datas(ida, volta, flex)  # valida datas antes de gastar cota
+                voltas = int(form["voltas"] or 0)
+                if voltas not in VOLTAS_OPCOES:
+                    raise ValueError("quantidade de horários de volta inválida")
             except ValueError as exc:
                 erro = str(exc)
             if erro is None and ctx["provedor"] is not None:
                 inicio = time.monotonic()
                 resultado = buscar_flexivel(ctx["provedor"], origem, destino, ida, volta, flex,
                                             paralelo=PARALELO)
-                segundos = time.monotonic() - inicio
                 historico.gravar(resultado.ofertas)
+                if voltas:
+                    resultado.ofertas, erros_volta = detalhar_voltas(ctx["provedor"], resultado.ofertas,
+                                                                     voltas, PARALELO)
+                    resultado.erros.extend(erros_volta)
+                segundos = time.monotonic() - inicio
                 consultas = getattr(ctx["provedor"], "consultas_feitas", None)
         finally:
             historico.fechar()
         return render_template("busca.html", form=form, resultado=resultado, erro=erro,
+                               facetas=facetas(resultado.ofertas) if resultado else None,
                                consultas=consultas, segundos=segundos, flex_maximo=FLEX_MAXIMO,
-                               pagina="busca", **ctx)
+                               voltas_opcoes=VOLTAS_OPCOES, pagina="busca", **ctx)
+
+    @app.post("/api/volta")
+    def api_volta():
+        """Horários da volta de uma oferta (botão "ver volta"): 1 consulta, com cache."""
+        dados = request.get_json(silent=True) or {}
+        try:
+            oferta = Oferta(
+                companhia=str(dados.get("companhia", "")), origem=resolver_aeroporto(dados.get("origem"), "origem"),
+                destino=resolver_aeroporto(dados.get("destino"), "destino"),
+                data_ida=_data(dados.get("ida")), data_volta=_data(dados.get("volta")),
+                partida_ida="", chegada_ida="", escalas=0, duracao_min=0,
+                preco=float(dados.get("preco")), link="", provedor="", token_volta=str(dados.get("token") or ""),
+            )
+        except (TypeError, ValueError) as exc:
+            return jsonify({"erro": f"pedido inválido: {exc}"}), 400
+        historico = Historico(db)
+        try:
+            provedor = criar_provedor(historico)
+            detalhada = provedor.detalhar_volta(oferta)
+        except ErroDeProvedor as exc:
+            return jsonify({"erro": str(exc)}), 502
+        finally:
+            historico.fechar()
+        if not detalhada.tem_volta:
+            return jsonify({"indisponivel": True, "erro": "a fonte não informou o voo de volta"}), 404
+        return jsonify({"partida": detalhada.partida_volta, "chegada": detalhada.chegada_volta,
+                        "escalas": detalhada.escalas_volta, "duracao": duracao(detalhada.duracao_volta_min or 0),
+                        "preco": detalhada.preco, "preco_brl": formatar_brl(detalhada.preco)})
 
     @app.get("/historico")
     def ver_historico():

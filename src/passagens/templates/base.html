@@ -73,6 +73,24 @@
   .selo.alerta { background: var(--alerta-fundo); color: var(--alerta-texto); border: 1px solid var(--alerta-borda); }
   .selo.ok { background: var(--ok-fundo); color: var(--ok-texto); }
   .mais-barato td { font-weight: 600; }
+  small.anunciado { font-weight: 400; font-size: 12px; color: var(--suave); }
+  button.secundario { background: transparent; color: var(--destaque); border: 1px solid var(--destaque);
+                      padding: 4px 10px; font-size: 13px; font-weight: 500; }
+  .filtros summary { cursor: pointer; font-weight: 600; margin-bottom: 0; }
+  .filtros[open] summary { margin-bottom: 12px; }
+  .filtros summary span { font-weight: 400; color: var(--suave); }
+  .filtros-grade { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+  .filtros input[type=range] { padding: 0; accent-color: var(--destaque); }
+  .filtros fieldset { border: 0; border-top: 1px solid var(--borda); margin: 14px 0 0; padding: 10px 0 0; }
+  .filtros legend { font-size: 13px; color: var(--suave); padding: 0 6px 0 0; }
+  .opcao { display: inline-flex; align-items: center; gap: 5px; margin: 4px 14px 4px 0; font-size: 14px;
+           color: var(--texto); white-space: nowrap; }
+  .opcao input { width: auto; }
+  .opcao small { color: var(--suave); }
+  .atalhos { font-size: 13px; white-space: nowrap; }
+  .atalhos a { color: var(--destaque); }
+  .filtros-rodape { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+                    margin: 12px 0 0; color: var(--suave); flex-wrap: wrap; }
 </style>
 </head>
 <body>

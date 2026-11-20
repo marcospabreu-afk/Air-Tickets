@@ -4,7 +4,7 @@ import pytest
 
 from passagens import cli
 from passagens.alertas import motivos_de_alerta
-from passagens.busca import buscar_flexivel, ordenar, pares_de_datas, remover_duplicadas
+from passagens.busca import buscar_flexivel, detalhar_voltas, ordenar, pares_de_datas, remover_duplicadas
 from passagens.historico import CacheSQLite, Historico
 from passagens.modelos import Oferta
 from passagens.provedores import ErroDeProvedor, ProvedorDePrecos, ProvedorFalso, ProvedorSerpApi
@@ -262,3 +262,72 @@ def test_busca_paralela_da_o_mesmo_resultado_que_sequencial():
     seq = buscar_flexivel(ProvedorFalso(), "CWB", "LIS", IDA, VOLTA, flex=3, hoje=HOJE)
     par = buscar_flexivel(ProvedorFalso(), "CWB", "LIS", IDA, VOLTA, flex=3, hoje=HOJE, paralelo=8)
     assert par.ofertas == seq.ofertas and len(par.pares_consultados) == 49
+
+
+RESPOSTA_VOLTA = {"best_flights": [
+    {"flights": [{"departure_airport": {"id": "LIS", "time": "2027-03-24 19:15"},
+                  "arrival_airport": {"id": "CWB", "time": "2027-03-25 08:15"}, "airline": "LATAM"}],
+     "layovers": [{}, {}], "total_duration": 960, "price": 5200},
+    {"flights": [{"departure_airport": {"id": "LIS", "time": "2027-03-24 13:50"},
+                  "arrival_airport": {"id": "CWB", "time": "2027-03-25 08:15"}, "airline": "LATAM"}],
+     "layovers": [{}], "total_duration": 1285, "price": 5123},
+]}
+
+
+def test_serpapi_detalha_volta_com_o_mesmo_preco_da_oferta():
+    chamadas = []
+
+    def http_get(url, params, timeout):
+        chamadas.append(params)
+        return RespostaFalsa(RESPOSTA_VOLTA if "departure_token" in params else RESPOSTA_SERPAPI)
+
+    p = ProvedorSerpApi(chave="x", http_get=http_get)
+    oferta = p.buscar("CWB", "LIS", IDA, VOLTA)[0]
+    assert oferta.token_volta == "tok" and not oferta.tem_volta
+    d = p.detalhar_volta(oferta)
+    assert chamadas[-1]["departure_token"] == "tok"
+    assert (d.partida_volta, d.chegada_volta, d.escalas_volta, d.preco) == ("13:50", "08:15+1", 1, 5123.0)
+
+
+def test_serpapi_sem_token_nao_consulta():
+    p = ProvedorSerpApi(chave="x", http_get=lambda *a, **k: pytest.fail("não devia consultar"))
+    assert p.detalhar_volta(oferta(4000)) == oferta(4000)
+
+
+def test_detalhar_voltas_so_das_n_primeiras():
+    p = ProvedorFalso()
+    r = buscar_flexivel(p, "CWB", "LIS", IDA, VOLTA, flex=1, hoje=HOJE)
+    ofertas, erros = detalhar_voltas(p, r.ofertas, 4, paralelo=3)
+    assert erros == [] and p.consultas_volta == 4
+    assert [o.tem_volta for o in ofertas].count(True) == 4
+    assert all(o.tem_volta for o in ofertas[:4])
+    assert detalhar_voltas(p, r.ofertas, 0) == (r.ofertas, [])
+
+
+def test_cli_mostra_horario_da_volta(tmp_path, capsys):
+    args = ["buscar", "--provedor", "falso", "--db", str(tmp_path / "h.db"), "--origem", "CWB",
+            "--destino", "LIS", "--ida", "2027-03-10", "--volta", "2027-03-24", "--detalhar-volta", "2"]
+    assert cli.main(args) == 0
+    saida = capsys.readouterr().out
+    assert saida.count("10:20→05:40+1") == 2 and "Escalas ida/volta" in saida
+
+
+def test_serpapi_volta_com_preco_diferente_ou_indisponivel():
+    so_cara = {"best_flights": [dict(RESPOSTA_VOLTA["best_flights"][0])]}  # só a de R$ 5.200
+
+    def http_get(url, params, timeout):
+        if "departure_token" not in params:
+            return RespostaFalsa(RESPOSTA_SERPAPI)
+        return RespostaFalsa(so_cara if http_get.cara else {"best_flights": [], "other_flights": []})
+
+    http_get.cara = True
+    p = ProvedorSerpApi(chave="x", http_get=http_get)
+    o = p.buscar("CWB", "LIS", IDA, VOLTA)[0]
+    d = p.detalhar_volta(o)
+    assert (d.preco, d.preco_anunciado, d.partida_volta) == (5200.0, 5123.0, "19:15")
+    http_get.cara = False
+    vazio = ProvedorSerpApi(chave="x", http_get=http_get)
+    o = vazio.buscar("CWB", "LIS", IDA, VOLTA)[0]
+    d = vazio.detalhar_volta(o)
+    assert d.volta_indisponivel and not d.tem_volta and d.preco == o.preco
+    assert vazio.detalhar_volta(d) is d  # não consulta de novo
