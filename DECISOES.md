@@ -133,3 +133,34 @@ Isso consome ~20% da cota gratuita mensal — use `--flex` menor no dia a dia.
   migrados automaticamente (registros existentes = 1 adulto). Resumo, média e alerta
   são calculados por composição de grupo.
 - Para não invalidar o cache, `children`/`infants_on_lap` só são enviados quando > 0.
+
+## 9. Rotas editáveis, regiões e alertas por e-mail (21/11/2026)
+
+Pedido: editar as rotas pela página Monitorar e ser avisado quando o preço de uma
+rota (ou região) cair. Escolhas do usuário: aviso por **e-mail e na página**; site
+no **Render grátis com banco gratuito**.
+
+- **Banco:** o Render grátis apaga o disco ao "dormir", então rotas e alertas vão
+  para um **Postgres gratuito (Neon, 1 GB)** via `DATABASE_URL`. A camada de banco
+  (`historico.py`) funciona com SQLite e Postgres (mesmas consultas; `?` → `%s`;
+  `ON CONFLICT` nos dois). Testado com Postgres 16 local. O cache das respostas
+  (dezenas de KB cada) é limpo ao gravar, para caber no 1 GB.
+- **Região:** a SerpApi aceita vários aeroportos em `arrival_id` ("LIS,OPO,FAO") —
+  testado: 1 consulta trouxe voos para os três. O destino da rota aceita até 7
+  aeroportos; digitar um país sugere seus aeroportos principais.
+- **Quando avisar:** a regra de ALERTA continua a mesma (abaixo do alvo ou >15%
+  abaixo da média dos menores). O **e-mail** só sai quando o preço é menor que o do
+  último alerta da rota (desde a última edição) — avisa a queda, sem repetir o
+  mesmo valor todo dia.
+- **E-mail:** o Render grátis bloqueia SMTP (portas 25/465/587, desde set/2025),
+  então no Render o envio é por HTTPS com o **Resend** (grátis: 100/dia). No
+  computador também funciona SMTP (ex.: Gmail com senha de app). Credenciais só em
+  variáveis de ambiente.
+- **Verificação diária:** um processo agendado dentro do site não roda enquanto o
+  Render grátis dorme; por isso um workflow agendado do **GitHub Actions** (grátis)
+  chama `POST /api/monitorar/executar` com um token (`PASSAGENS_TOKEN_MONITOR`), que
+  acorda o site e roda o monitoramento. O endpoint dispensa a senha do site mas
+  exige o token.
+- **Segurança:** formulários POST só são aceitos vindos do próprio site
+  (verificação de `Origin`/`Referer`), para outro site não usar a senha guardada no
+  navegador para apagar rotas.

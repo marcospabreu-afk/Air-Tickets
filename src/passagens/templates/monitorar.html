@@ -2,42 +2,201 @@
 {% block titulo %}Monitorar rotas{% endblock %}
 {% block conteudo %}
 <h1>Monitorar rotas</h1>
+{% if msg %}<div class="aviso ok">{{ msg }}</div>{% endif %}
 {% if erro %}<div class="aviso erro">{{ erro }}</div>{% endif %}
+
+<div class="cartao status">
+  <p><b>Aviso por e-mail:</b>
+    {% if notificador.configurado %}<span class="selo ok">ativo</span> {{ notificador.descricao() }}
+    {% else %}<span class="selo alerta">desligado</span> os alertas aparecem só nesta página
+      (para receber por e-mail, configure <code>PASSAGENS_EMAIL_PARA</code> e <code>RESEND_API_KEY</code>; veja o README){% endif %}</p>
+  <p><b>Verificação automática diária:</b>
+    {% if agendamento_ativo %}<span class="selo ok">ativa</span> pelo agendamento do GitHub Actions
+    {% else %}<span class="selo alerta">desligada</span> defina <code>PASSAGENS_TOKEN_MONITOR</code> e o agendamento (README){% endif %}</p>
+  <p><b>Última verificação:</b> {{ ultima_verificacao or 'nenhuma ainda' }}</p>
+  <p class="dica">O alerta dispara quando o menor preço fica abaixo do seu alvo ou mais de 15% abaixo da
+    média histórica — e o e-mail só é enviado quando o preço <b>cai abaixo do último alerta</b> daquela rota,
+    para não repetir o mesmo aviso todo dia. Cada verificação gasta <b>{{ consultas_por_verificacao }}</b>
+    consulta(s) da SerpApi ({{ consultas_por_verificacao * 30 }}/mês se diária; plano grátis: 250/mês).</p>
+</div>
+
+<h2 id="form-rota">{{ 'Editar rota' if form.id else 'Nova rota' }}</h2>
+<form class="cartao" method="post" action="/monitorar/rotas" id="formulario-rota">
+  <input type="hidden" name="id" value="{{ form.id }}">
+  <div class="formulario">
+    <div><label for="nome">Nome (opcional)</label>
+      <input id="nome" name="nome" value="{{ form.nome }}" maxlength="60" placeholder="ex.: Férias em Portugal"></div>
+    <div class="campo-aeroporto">
+      <label for="m-origem">Origem</label>
+      <input id="m-origem" name="origem" value="{{ form.origem }}" required autocomplete="off"
+             placeholder="cidade, aeroporto ou código" role="combobox" aria-expanded="false" aria-controls="sugestoes-m-origem">
+      <ul class="sugestoes" id="sugestoes-m-origem" role="listbox" hidden></ul>
+      <small class="rotulo-aeroporto" id="rotulo-m-origem">{{ rotulo_aeroporto(form.origem) }}</small>
+    </div>
+    <div class="campo-aeroporto destinos">
+      <label for="m-destino-busca">Destino ou região</label>
+      <div class="chips" id="chips-destino"></div>
+      <input id="m-destino-busca" autocomplete="off" placeholder="cidade, aeroporto ou país"
+             role="combobox" aria-expanded="false" aria-controls="sugestoes-m-destino">
+      <ul class="sugestoes" id="sugestoes-m-destino" role="listbox" hidden></ul>
+      <input type="hidden" name="destino" id="m-destino" value="{{ form.destino }}">
+      <small class="rotulo-aeroporto">vários aeroportos = uma região (1 consulta só)</small>
+    </div>
+    <div><label for="m-ida">Ida</label><input id="m-ida" type="date" name="ida" value="{{ form.ida }}" required></div>
+    <div><label for="m-volta">Volta</label><input id="m-volta" type="date" name="volta" value="{{ form.volta }}" required></div>
+    <div><label for="m-flex">Datas flexíveis</label>
+      <select id="m-flex" name="flex">
+        {% for n in range(flex_maximo + 1) %}
+        <option value="{{ n }}" {{ 'selected' if form.flex|string == n|string }}>
+          {{ 'Exatas · 1 consulta' if n == 0 else '±%d · %d consultas'|format(n, (2*n+1)**2) }}</option>
+        {% endfor %}
+      </select></div>
+    <div><label for="m-alvo">Preço-alvo (R$, total)</label>
+      <input id="m-alvo" name="preco_alvo" inputmode="decimal" value="{{ form.preco_alvo }}" placeholder="opcional"></div>
+    <fieldset class="passageiros">
+      <legend>Passageiros</legend>
+      <div class="passageiros-campos">
+        <label>Adultos <small>12+ anos</small>
+          <input type="number" name="adultos" min="1" max="9" value="{{ form.adultos }}" required></label>
+        <label>Crianças <small>2–11 anos</small>
+          <input type="number" name="criancas" min="0" max="8" value="{{ form.criancas }}"></label>
+        <label>Bebês <small>colo, até 2</small>
+          <input type="number" name="bebes" min="0" max="4" value="{{ form.bebes }}"></label>
+      </div>
+    </fieldset>
+  </div>
+  <p class="acoes-form">
+    <label class="opcao"><input type="checkbox" name="ativa" value="1" {{ 'checked' if form.ativa }}> monitorar (ativa)</label>
+    <button type="submit">{{ 'Salvar alterações' if form.id else 'Criar rota' }}</button>
+    {% if form.id %}<a href="/monitorar#rotas">cancelar edição</a>{% endif %}
+  </p>
+  <p class="dica">Sem preço-alvo, o alerta só dispara pela queda de mais de 15% em relação à média histórica
+     (que precisa de algumas verificações para se formar). Editar uma rota reinicia o controle de alertas dela.</p>
+</form>
+
+<h2 id="rotas">Rotas monitoradas</h2>
 {% if rotas %}
-<form class="cartao" method="post" action="/monitorar" data-carregando="Verificando rotas…">
-  <p class="resumo">Rotas do arquivo <code>{{ arquivo }}</code>. Alerta quando o menor preço fica abaixo do
-    alvo ou mais de 15% abaixo da média histórica dos menores preços.</p>
+<div class="cartao">
   <div class="tabela">
   <table>
-    <thead><tr><th>Rota</th><th>Ida</th><th>Volta</th><th>Flex.</th><th>Alvo</th>
-      {% if resultados %}<th>Menor agora</th><th>Média dos menores</th><th>Situação</th><th>Reserva</th>{% endif %}</tr></thead>
+    <thead><tr><th>Rota</th><th>Datas</th><th>Passageiros</th><th>Alvo</th><th>Situação</th><th></th></tr></thead>
     <tbody>
-    {% for rota in rotas %}
-      {% set r = resultados[loop.index0] if resultados else none %}
+    {% for r in rotas %}
+      <tr class="{{ '' if r.ativa else 'pausada' }}">
+        <td>{% if r.nome %}<b>{{ r.nome }}</b><br>{% endif %}{{ r.origem }} → {{ r.destinos|join(' / ') }}</td>
+        <td>{{ r.ida.strftime('%d/%m/%Y') }} – {{ r.volta.strftime('%d/%m/%Y') }}{% if r.flex %} <small>(±{{ r.flex }})</small>{% endif %}</td>
+        <td>{{ r.passageiros.descricao }}</td>
+        <td class="num">{{ r.preco_alvo|brl if r.preco_alvo else '—' }}</td>
+        <td>{% if r.ativa %}<span class="selo ok">ativa</span>{% else %}<span class="selo">pausada</span>{% endif %}</td>
+        <td class="acoes"><div>
+          <a href="/monitorar?editar={{ r.id }}#form-rota">editar</a>
+          <form method="post" action="/monitorar/rotas/{{ r.id }}/ativa"><button type="submit" class="secundario">{{ 'pausar' if r.ativa else 'retomar' }}</button></form>
+          <form method="post" action="/monitorar/rotas/{{ r.id }}/excluir" onsubmit="return confirm('Excluir esta rota?')"><button type="submit" class="secundario perigo">excluir</button></form>
+        </div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <form method="post" action="/monitorar/verificar" data-carregando="Verificando rotas…" style="margin-top:12px">
+    <button type="submit">Verificar agora</button>
+    <span class="dica">busca as rotas ativas agora ({{ consultas_por_verificacao }} consulta(s)) e avisa se o preço caiu</span>
+  </form>
+</div>
+{% else %}
+  <div class="aviso info">Nenhuma rota ainda. Crie a primeira no formulário acima.</div>
+{% endif %}
+
+{% if relatorio %}
+<h2>Resultado da verificação</h2>
+<div class="cartao">
+  <p class="resumo">{{ relatorio.resumo }}</p>
+  <div class="tabela">
+  <table>
+    <thead><tr><th>Rota</th><th>Menor agora</th><th>Média dos menores</th><th>Situação</th><th>Reserva</th></tr></thead>
+    <tbody>
+    {% for r in relatorio.resultados %}
       <tr>
-        <td>{{ rota.origem }} → {{ rota.destino }}<br><small>{{ rota.passageiros.descricao }}</small></td>
-        <td>{{ rota.ida.strftime('%d/%m/%Y') }}</td><td>{{ rota.volta.strftime('%d/%m/%Y') }}</td>
-        <td>± {{ rota.flex }}</td><td class="num">{{ rota.preco_alvo|brl if rota.preco_alvo else '—' }}</td>
-        {% if resultados %}
-          {% if r.melhor %}
-            <td class="num">{{ r.melhor.preco|brl }}<br><small>{{ r.melhor.companhia }},
-              {{ r.melhor.data_ida.strftime('%d/%m') }}→{{ r.melhor.data_volta.strftime('%d/%m') }}</small></td>
-            <td class="num">{{ r.media_dos_menores|brl if r.media_dos_menores else 'sem histórico' }}</td>
-            <td>{% if r.alerta %}<span class="selo alerta">ALERTA</span><br><small>{{ r.motivos|join('; ') }}</small>
-                {% else %}<span class="selo ok">ok</span>{% endif %}</td>
-            <td><a href="{{ r.melhor.link }}" target="_blank" rel="noopener">Abrir</a></td>
-          {% else %}
-            <td colspan="4">sem dados {{ r.erros|join('; ') }}</td>
-          {% endif %}
+        <td>{{ r.rota.rotulo }}</td>
+        {% if r.melhor %}
+          <td class="num">{{ r.melhor.preco|brl }}<br><small>{{ r.melhor.companhia }}{% if r.melhor.aeroporto_destino %} → {{ r.melhor.aeroporto_destino }}{% endif %},
+            {{ r.melhor.data_ida.strftime('%d/%m') }}→{{ r.melhor.data_volta.strftime('%d/%m') }}</small></td>
+          <td class="num">{{ r.media_dos_menores|brl if r.media_dos_menores else 'sem histórico' }}</td>
+          <td>{% if r.alerta %}<span class="selo alerta">ALERTA</span><br><small>{{ r.motivos|join('; ') }}</small>
+              {% else %}<span class="selo ok">ok</span>{% endif %}</td>
+          <td><a href="{{ r.melhor.link }}" target="_blank" rel="noopener">Reservar ↗</a></td>
+        {% else %}
+          <td colspan="4">sem dados {{ r.erros|join('; ') }}</td>
         {% endif %}
       </tr>
     {% endfor %}
     </tbody>
   </table>
   </div>
-  <p style="margin:12px 0 0"><button type="submit">Verificar agora</button></p>
-</form>
-{% elif not erro %}
-  <div class="aviso info">Nenhuma rota em <code>{{ arquivo }}</code>.</div>
+</div>
 {% endif %}
+
+<h2 id="alertas">Alertas recebidos</h2>
+{% if alertas %}
+<div class="cartao tabela">
+  <table>
+    <thead><tr><th>Quando</th><th>Rota</th><th>Preço</th><th>Voo</th><th>Motivo</th><th>E-mail</th><th></th></tr></thead>
+    <tbody>
+    {% for a in alertas %}
+      <tr>
+        <td>{{ a.criado_em.replace('T', ' ')[:16] }}</td>
+        <td>{{ a.rota_rotulo }}</td>
+        <td class="num">{{ a.preco|brl }}</td>
+        <td>{{ a.companhia }} → {{ a.destino }}<br><small>{{ a.data_ida.strftime('%d/%m') }}–{{ a.data_volta.strftime('%d/%m') }}</small></td>
+        <td><small>{{ a.motivos }}</small></td>
+        <td>{{ '✓ enviado' if a.email_enviado else '—' }}</td>
+        <td><a href="{{ a.link }}" target="_blank" rel="noopener">Reservar ↗</a></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+  <div class="aviso info">Nenhum alerta ainda.</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% include "_sugestoes.js" %}
+campoAeroporto("m-origem");
+(function () {
+  var oculto = document.getElementById("m-destino");
+  var chips = document.getElementById("chips-destino");
+  var entrada = document.getElementById("m-destino-busca");
+  function codigos() { return oculto.value ? oculto.value.split(",").filter(Boolean) : []; }
+  function desenhar() {
+    chips.innerHTML = "";
+    codigos().forEach(function (c) {
+      var chip = document.createElement("span"); chip.className = "chip"; chip.textContent = c;
+      var x = document.createElement("button"); x.type = "button"; x.textContent = "×";
+      x.setAttribute("aria-label", "remover " + c);
+      x.addEventListener("click", function () {
+        oculto.value = codigos().filter(function (k) { return k !== c; }).join(","); desenhar();
+      });
+      chip.appendChild(x); chips.appendChild(chip);
+    });
+    entrada.required = codigos().length === 0;
+  }
+  ligarSugestoes(entrada, document.getElementById("sugestoes-m-destino"), {
+    regioes: true,
+    aoEscolher: function (a) {
+      var atuais = codigos();
+      a.iata.split(",").forEach(function (c) { if (atuais.indexOf(c) < 0 && atuais.length < 7) atuais.push(c); });
+      oculto.value = atuais.join(","); entrada.value = ""; desenhar();
+    }
+  });
+  // Texto digitado sem escolher na lista também vale (o servidor resolve "Lisboa" -> LIS).
+  document.getElementById("formulario-rota").addEventListener("submit", function () {
+    var t = entrada.value.trim();
+    if (t) oculto.value = codigos().concat([t]).join(",");
+  });
+  desenhar();
+})();
+</script>
 {% endblock %}

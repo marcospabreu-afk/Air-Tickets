@@ -1,0 +1,46 @@
+# Verificação diária das rotas monitoradas.
+# Chama o site publicado (Render), que busca os preços, registra os alertas e envia o e-mail.
+#
+# Configure em GitHub > Settings > Secrets and variables > Actions > New repository secret:
+#   PASSAGENS_URL_SITE       ex.: https://passagens-xxxx.onrender.com
+#   PASSAGENS_TOKEN_MONITOR  o mesmo valor de PASSAGENS_TOKEN_MONITOR no Render
+# Sem esses segredos, o workflow só avisa e termina sem erro.
+name: Monitorar passagens
+
+on:
+  schedule:
+    - cron: "17 10 * * *"   # todo dia às 10:17 UTC (07:17 em Brasília)
+  workflow_dispatch: {}      # botão "Run workflow" para rodar na hora
+
+jobs:
+  monitorar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Chamar o monitoramento do site
+        env:
+          URL_SITE: ${{ secrets.PASSAGENS_URL_SITE }}
+          TOKEN: ${{ secrets.PASSAGENS_TOKEN_MONITOR }}
+        run: |
+          if [ -z "$URL_SITE" ] || [ -z "$TOKEN" ]; then
+            echo "::warning::Defina os segredos PASSAGENS_URL_SITE e PASSAGENS_TOKEN_MONITOR (veja o README)."
+            exit 0
+          fi
+          # O Render grátis "dorme": a 1ª chamada acorda o site (~1 min), por isso as tentativas.
+          for tentativa in 1 2 3; do
+            codigo=$(curl -sS -o resposta.json -w '%{http_code}' --max-time 600 -X POST \
+              -H "Authorization: Bearer $TOKEN" "${URL_SITE%/}/api/monitorar/executar" || echo 000)
+            echo "tentativa $tentativa: HTTP $codigo"
+            if [ "$codigo" = "200" ]; then
+              python3 -c "import json; d=json.load(open('resposta.json')); print(d['resumo']); [print(' -', r['rota'], r['menor_preco'], 'ALERTA' if r['alerta'] else 'ok') for r in d['rotas']]"
+              exit 0
+            fi
+            cat resposta.json 2>/dev/null || true
+            if [ "$codigo" = "401" ] || [ "$codigo" = "503" ]; then
+              echo "::error::Configuração: confira PASSAGENS_TOKEN_MONITOR (igual no Render e no GitHub) e a chave da SerpApi."
+              exit 1
+            fi
+            sleep 60
+          done
+          echo "::error::O site não respondeu ao monitoramento."
+          exit 1

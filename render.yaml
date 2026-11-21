@@ -16,7 +16,17 @@ services:
         sync: false
       - key: PASSAGENS_SENHA      # senha para abrir o site; protege sua cota
         sync: false
-      - key: PASSAGENS_DB         # no plano grátis o disco é apagado ao reiniciar
+      - key: DATABASE_URL         # Postgres grátis (Neon): guarda rotas, alertas e histórico
+        sync: false
+      - key: PASSAGENS_DB         # só usado se DATABASE_URL não for definida (apagado ao reiniciar)
         value: /tmp/historico.db
+      - key: PASSAGENS_TOKEN_MONITOR  # o agendamento diário do GitHub Actions usa este token
+        generateValue: true
+      - key: PASSAGENS_URL_SITE   # endereço do site, para o link no e-mail
+        sync: false
+      - key: PASSAGENS_EMAIL_PARA # e-mail que recebe os alertas
+        sync: false
+      - key: RESEND_API_KEY       # envio de e-mail por HTTPS (o Render grátis bloqueia SMTP)
+        sync: false
       - key: PASSAGENS_ROTAS
         value: rotas.yaml

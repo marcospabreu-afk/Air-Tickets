@@ -58,7 +58,7 @@ def test_busca_valida_entrada_sem_consultar(cliente):
 
 def test_monitorar_mostra_alerta(cliente):
     assert "Verificar agora" in cliente.get("/monitorar").get_data(as_text=True)
-    html = cliente.post("/monitorar").get_data(as_text=True)
+    html = cliente.post("/monitorar/verificar").get_data(as_text=True)
     assert "ALERTA" in html and "abaixo do alvo" in html
 
 

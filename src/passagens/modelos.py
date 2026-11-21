@@ -85,6 +85,8 @@ class Oferta:
     # True quando a fonte foi consultada e não informou o voo de volta.
     volta_indisponivel: bool = False
     passageiros: Passageiros = UM_ADULTO
+    # Aeroporto de chegada da oferta (quando `destino` é uma região com vários aeroportos).
+    aeroporto_destino: str | None = None
 
     @property
     def preco_por_pessoa(self) -> float:
@@ -97,3 +99,48 @@ class Oferta:
     @property
     def rota(self) -> str:
         return f"{self.origem}-{self.destino}"
+
+
+@dataclass(frozen=True)
+class Rota:
+    """Rota monitorada. `destino` pode ter vários aeroportos ("LIS,OPO,FAO" = uma região)."""
+
+    origem: str
+    destino: str
+    ida: date
+    volta: date
+    flex: int = 0
+    preco_alvo: float | None = None  # total do grupo
+    passageiros: Passageiros = UM_ADULTO
+    id: int | None = None
+    nome: str = ""  # apelido opcional, ex.: "Portugal"
+    ativa: bool = True
+
+    @property
+    def destinos(self) -> list[str]:
+        return [d for d in self.destino.split(",") if d]
+
+    @property
+    def rotulo(self) -> str:
+        grupo = "" if self.passageiros == UM_ADULTO else f", {self.passageiros.descricao}"
+        destino = self.destino.replace(",", "/")
+        nome = f"{self.nome}: " if self.nome else ""
+        return f"{nome}{self.origem}→{destino} ({self.ida} a {self.volta}, ±{self.flex}{grupo})"
+
+
+@dataclass(frozen=True)
+class Alerta:
+    """Alerta disparado para uma rota (preço abaixo do alvo ou queda >15%)."""
+
+    rota_id: int | None
+    criado_em: str
+    preco: float
+    companhia: str
+    data_ida: date
+    data_volta: date
+    destino: str  # aeroporto de chegada da oferta
+    motivos: str
+    link: str
+    email_enviado: bool = False
+    id: int | None = None
+    rota_rotulo: str = ""

@@ -73,6 +73,7 @@ class ProvedorFalso(ProvedorDePrecos):
         self.consultas.append((origem, destino, ida, volta))
         grupo = (passageiros.adultos + passageiros.criancas * self.FATOR_CRIANCA
                  + passageiros.bebes * self.FATOR_BEBE)
+        destinos = destino.split(",")  # região: vários aeroportos de destino
         base = 3000 + zlib.crc32(f"{origem}{destino}".encode()) % 2000
         # Variações fixas pelo dia da semana e pela duração da viagem.
         ajuste_dia = [0, -120, -180, -90, 150, 260, 80][ida.weekday()]
@@ -100,8 +101,9 @@ class ProvedorFalso(ProvedorDePrecos):
                 provedor=self.nome,
                 token_volta=f"falso:{cia}",
                 passageiros=passageiros,
+                aeroporto_destino=destinos[i % len(destinos)],
             )
-            for cia, partida, chegada, escalas, duracao, fator_cia in _COMPANHIAS_FALSAS
+            for i, (cia, partida, chegada, escalas, duracao, fator_cia) in enumerate(_COMPANHIAS_FALSAS)
         ]
 
     def detalhar_volta(self, oferta: Oferta) -> Oferta:
@@ -242,6 +244,7 @@ class ProvedorSerpApi(ProvedorDePrecos):
                     provedor=self.nome,
                     token_volta=item.get("departure_token"),
                     passageiros=passageiros,
+                    aeroporto_destino=trechos[-1].get("arrival_airport", {}).get("id"),
                 )
             )
         return ofertas

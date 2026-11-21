@@ -11,7 +11,8 @@ from typing import Sequence
 
 from .alertas import formatar_brl
 from .busca import buscar_flexivel, detalhar_voltas, pares_de_datas
-from .monitor import carregar_rotas, verificar_rota
+from .monitor import carregar_rotas, executar_monitoramento, rotas_do_banco
+from .notificacao import Notificador
 from .historico import CacheSQLite, Historico
 from .modelos import Oferta, Passageiros
 from .provedores import ErroDeProvedor, ProvedorDePrecos, ProvedorFalso, ProvedorSerpApi
@@ -155,13 +156,20 @@ def cmd_historico(args: argparse.Namespace) -> int:
 
 
 def cmd_monitorar(args: argparse.Namespace) -> int:
-    rotas = carregar_rotas(args.rotas)
     historico = Historico(args.db)
+    # Sem --rotas: usa as rotas do banco (as mesmas da página Monitorar do site);
+    # na primeira vez, importa as do rotas.yaml.
+    rotas = carregar_rotas(args.rotas) if args.rotas else rotas_do_banco(historico, "rotas.yaml")
     provedor = _criar_provedor(args, historico)
     _aviso_dados(provedor)
+    notificador = Notificador()
+    relatorio = executar_monitoramento(historico, provedor, rotas, notificador, paralelo=args.paralelo,
+                                       url_site=os.environ.get("PASSAGENS_URL_SITE", ""))
+    historico.fechar()
+    precos_novos = {(a.rota_rotulo, a.preco) for a in relatorio.novos_alertas}
     alertas = 0
-    for rota in rotas:
-        r = verificar_rota(rota, historico, provedor, paralelo=args.paralelo)
+    for r in relatorio.resultados:
+        rota = r.rota
         for erro in r.erros:
             print(f"  aviso: {erro}", file=sys.stderr)
         if r.melhor is None:
@@ -170,16 +178,32 @@ def cmd_monitorar(args: argparse.Namespace) -> int:
         m = r.melhor
         alvo = formatar_brl(rota.preco_alvo) if rota.preco_alvo else "—"
         media_txt = formatar_brl(r.media_dos_menores) if r.media_dos_menores else "sem histórico"
-        detalhe = (f"{formatar_brl(m.preco)} {m.companhia} {m.data_ida:%d/%m}→{m.data_volta:%d/%m}"
+        chegada = f" (chegada {m.aeroporto_destino})" if "," in rota.destino and m.aeroporto_destino else ""
+        detalhe = (f"{formatar_brl(m.preco)} {m.companhia}{chegada} {m.data_ida:%d/%m}→{m.data_volta:%d/%m}"
                    f" | alvo {alvo} | média dos menores {media_txt}")
         if r.alerta:
             alertas += 1
-            print(f"ALERTA {rota.rotulo}: {detalhe} | " + "; ".join(r.motivos))
+            novo = " [NOVO]" if (rota.rotulo, m.preco) in precos_novos else " [já avisado por este preço ou menor]"
+            print(f"ALERTA {rota.rotulo}: {detalhe} | " + "; ".join(r.motivos) + novo)
             print(f"       {m.link}")
         else:
             print(f"ok     {rota.rotulo}: {detalhe}")
+    print(f"\n{len(relatorio.resultados)} rota(s) verificada(s), {alertas} alerta(s), "
+          f"{len(relatorio.novos_alertas)} novo(s). E-mail: {relatorio.email} ({notificador.descricao()}).")
+    return 0
+
+
+def cmd_rotas(args: argparse.Namespace) -> int:
+    historico = Historico(args.db)
+    rotas = historico.listar_rotas()
     historico.fechar()
-    print(f"\n{len(rotas)} rota(s) verificada(s), {alertas} alerta(s).")
+    if not rotas:
+        print("Nenhuma rota no banco. Crie pela página Monitorar do site ou rode `passagens monitorar` "
+              "(importa o rotas.yaml).")
+        return 1
+    for r in rotas:
+        alvo = formatar_brl(r.preco_alvo) if r.preco_alvo else "sem alvo"
+        print(f"#{r.id:<3} {'ativa ' if r.ativa else 'pausada'} {r.rotulo} | alvo {alvo}")
     return 0
 
 
@@ -221,9 +245,15 @@ def criar_parser() -> argparse.ArgumentParser:
     h.add_argument("--destino", type=_iata)
     h.set_defaults(func=cmd_historico)
 
-    m = sub.add_parser("monitorar", parents=[comum], help="verifica rotas do rotas.yaml")
-    m.add_argument("--rotas", default="rotas.yaml", help="arquivo de rotas (padrão: rotas.yaml)")
+    m = sub.add_parser("monitorar", parents=[comum],
+                       help="verifica as rotas monitoradas e avisa por e-mail quando o preço cai")
+    m.add_argument("--rotas", default=None,
+                   help="usar este arquivo YAML em vez das rotas do banco (padrão: rotas do banco; "
+                        "na primeira vez importa o rotas.yaml)")
     m.set_defaults(func=cmd_monitorar)
+
+    r = sub.add_parser("rotas", parents=[comum], help="lista as rotas monitoradas do banco")
+    r.set_defaults(func=cmd_rotas)
     return parser
 
 

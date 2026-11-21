@@ -140,3 +140,36 @@ def buscar(consulta: str, limite: int = 15) -> list[Aeroporto]:
 
 def existe(codigo: str) -> bool:
     return codigo.upper() in todos()
+
+
+@dataclass(frozen=True)
+class Regiao:
+    """Vários aeroportos de um país, para monitorar uma região numa só consulta."""
+
+    pais: str
+    codigos: tuple[str, ...]
+
+    @property
+    def rotulo(self) -> str:
+        return f"{self.pais} — principais aeroportos ({', '.join(self.codigos)})"
+
+
+def regioes(consulta: str, limite_codigos: int = 7) -> list[Regiao]:
+    """Países cujo nome começa com a consulta, com seus aeroportos principais.
+
+    Só sugere países com pelo menos 2 aeroportos na lista de principais (os demais
+    podem ser escolhidos um a um).
+    """
+    q = normalizar(consulta)
+    if len(q) < 3:
+        return []
+    por_pais: dict[str, list[Aeroporto]] = {}
+    for a in todos().values():
+        if a.iata in PRINCIPAIS and normalizar(a.pais).startswith(q):
+            por_pais.setdefault(a.pais, []).append(a)
+    encontradas = []
+    for pais, lista in sorted(por_pais.items()):
+        lista.sort(key=lambda a: (_PESO.get(a.iata, 50), a.iata))
+        if len(lista) >= 2:
+            encontradas.append(Regiao(pais, tuple(a.iata for a in lista[:limite_codigos])))
+    return encontradas

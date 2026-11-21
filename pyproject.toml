@@ -10,8 +10,9 @@ requires-python = ">=3.10"
 dependencies = ["requests>=2.31", "PyYAML>=6.0"]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "flask>=3.0"]
-web = ["flask>=3.0", "gunicorn>=22"]
+dev = ["pytest>=8", "flask>=3.0", "aiosmtpd>=1.4"]
+web = ["flask>=3.0", "gunicorn>=22", "psycopg[binary]>=3.2"]
+postgres = ["psycopg[binary]>=3.2"]
 
 [project.scripts]
 passagens = "passagens.cli:main"
@@ -20,7 +21,7 @@ passagens = "passagens.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-passagens = ["templates/*.html", "dados/*.json"]
+passagens = ["templates/*.html", "templates/*.js", "dados/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
